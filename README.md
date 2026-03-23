@@ -15,6 +15,8 @@ Ideas Combine is a single React app that hosts multiple small products. The firs
 
 - `/`: product index
 - `/gomoku`: playable Gomoku page
+- `/study-tools`: study tools hub
+- `/study-tools/flash-cards`: upload knowledge sources and generate flash cards
 
 ## Scripts
 
@@ -42,6 +44,22 @@ Create a local `.env.local` file with:
 - `VITE_SUPABASE_ANON_KEY`
 
 Run the SQL in `supabase.sql` inside the Supabase SQL Editor before expecting gameplay inserts to work.
+
+## Claude Setup (Study Tools)
+
+Study Tools calls a Supabase Edge Function named `claude-study`, and that function calls Claude.
+
+1. Deploy function:
+   - `supabase functions deploy claude-study`
+2. Set secrets for the function:
+   - `supabase secrets set ANTHROPIC_API_KEY=your_key`
+   - Optional model override:
+     - `supabase secrets set ANTHROPIC_MODEL=claude-3-7-sonnet-latest`
+3. Ensure browser env still has:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+
+The function source lives at `supabase/functions/claude-study/index.ts`.
 
 ## Project Memory
 

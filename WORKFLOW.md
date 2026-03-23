@@ -20,9 +20,12 @@
 
 - `/`: product index page
 - `/gomoku`: first shipped product
+- `/study-tools`: study tool hub page
+- `/study-tools/flash-cards`: flash card studio (knowledge upload + Claude DSL rendering)
 - `src/gomoku.ts`: pure game logic
 - `src/gomoku.test.ts`: logic tests
 - `.github/workflows/deploy.yml`: GitHub Pages deployment
+- `supabase/functions/claude-study/index.ts`: Claude API edge-function bridge for study DSL generation
 
 ## Progress
 
@@ -37,6 +40,10 @@
 - Verified `npm run test`, `npm run typecheck`, and `npm run build` successfully inside WSL.
 - Added client-side Supabase integration for Gomoku session tracking.
 - Added `supabase.sql` for the required table and insert policy.
+- Added Study Tools hub with iLovePDF-style tool entry cards.
+- Added Flash Cards Studio with `txt` / `md` / `docx` uploads and interactive study canvas rendering.
+- Added JSON DSL parsing + renderer flow to avoid chat-like UI and render structured outputs.
+- Added Supabase Edge Function scaffold for real Claude API calls (`claude-study`).
 
 ### Next
 

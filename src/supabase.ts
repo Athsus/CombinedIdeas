@@ -13,7 +13,7 @@ export type GomokuSessionRecord = {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase =
+export const supabase =
   supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
@@ -22,10 +22,6 @@ const supabase =
         },
       })
     : null;
-
-export function isSupabaseReady(): boolean {
-  return Boolean(supabase);
-}
 
 export async function insertGomokuSession(record: GomokuSessionRecord): Promise<void> {
   if (!supabase) {
