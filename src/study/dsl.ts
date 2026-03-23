@@ -1,6 +1,6 @@
 export type StudySkill = "auto" | "flash_cards" | "quick_quiz" | "study_plan";
 
-export type GeneratedStudySkill = Exclude<StudySkill, "auto">;
+export type GeneratedStudySkill = Exclude<StudySkill, "auto"> | "mixed";
 
 export type StudyFlashCard = {
   id: string;
@@ -57,33 +57,45 @@ export type StudyCanvasDsl = {
   actions: string[];
 };
 
-export function buildFallbackDsl(knowledgeSummary: string): StudyCanvasDsl {
+function looksChinese(text: string): boolean {
+  return /[\u3400-\u9FFF]/.test(text);
+}
+
+export function buildFallbackDsl(knowledgeSummary: string, seedText = ""): StudyCanvasDsl {
+  const zh = looksChinese(`${knowledgeSummary}\n${seedText}`);
+
   return {
     version: "1.0",
     tool: "study_canvas",
     skill: "flash_cards",
-    title: "Generated Learning Canvas",
+    title: zh ? "学习画布（本地回退）" : "Learning Canvas (Local Fallback)",
     summary: knowledgeSummary,
     modules: [
       {
         type: "flashcards",
-        title: "Core Concepts",
-        description: "Review these seed cards while Claude output is unavailable.",
+        title: zh ? "核心概念" : "Core Concepts",
+        description: zh
+          ? "Claude 暂时不可用。下面是基于你上传内容结构化的起步卡片。"
+          : "Claude is temporarily unavailable. Here is a starter deck based on your uploaded content.",
         cards: [
           {
             id: "fallback-1",
-            front: "What is the key topic in your uploaded source?",
-            back: "The key topic is extracted from your documents. Re-run generation for a model-backed canvas.",
+            front: zh ? "请总结这份资料最核心的三个主题。" : "Summarize the three most important themes in this source.",
+            back: zh
+              ? "从定义、关键原理、典型应用三个角度各写一句。"
+              : "Write one sentence each for definition, key principle, and practical use.",
           },
           {
             id: "fallback-2",
-            front: "What is your learning goal for this source?",
-            back: "Set a focused goal, then generate again so the deck and quiz match your target outcome.",
+            front: zh ? "这份资料里最容易混淆的点是什么？" : "What is the most confusing point in this source?",
+            back: zh
+              ? "把它改写成一个“错误说法 vs 正确说法”的对照。"
+              : "Rewrite it as a contrast: common misconception vs correct statement.",
           },
         ],
       },
     ],
-    actions: ["Start review", "Regenerate canvas", "Refine goal"],
+    actions: zh ? ["继续生成", "细化目标", "切换学习方法"] : ["Regenerate", "Refine goal", "Switch method"],
   };
 }
 
@@ -143,7 +155,7 @@ function isStudyPlanSession(value: unknown): value is StudyPlanSession {
 }
 
 function isGeneratedSkill(value: unknown): value is GeneratedStudySkill {
-  return value === "flash_cards" || value === "quick_quiz" || value === "study_plan";
+  return value === "flash_cards" || value === "quick_quiz" || value === "study_plan" || value === "mixed";
 }
 
 function isModule(value: unknown): value is StudyModule {

@@ -69,7 +69,8 @@ export default function FlashCardsStudioPage() {
     } catch (generationError) {
       const message = generationError instanceof Error ? generationError.message : "Generation failed.";
       setError(`${message} Falling back to a local starter deck.`);
-      setDsl(buildFallbackDsl("Local fallback canvas. Confirm Edge Function logs and Claude settings, then regenerate."));
+      const seedText = files.map((file) => file.text.slice(0, 1200)).join("\n");
+      setDsl(buildFallbackDsl("Local fallback canvas. Confirm Edge Function logs and Claude settings, then regenerate.", seedText));
     } finally {
       setIsLoading(false);
     }

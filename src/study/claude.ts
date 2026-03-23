@@ -32,6 +32,14 @@ export async function generateStudyCanvas(input: GenerateStudyCanvasInput): Prom
     throw new Error(message || error.message || "Failed to call claude-study function.");
   }
 
+  const functionError = (data as { ok?: boolean; error?: string } | null)?.ok === false
+    ? (data as { error?: string } | null)?.error
+    : null;
+
+  if (functionError) {
+    throw new Error(functionError);
+  }
+
   const fromPayload = parseDslPayload((data as { dsl?: unknown } | null)?.dsl);
   if (fromPayload) {
     return fromPayload;
@@ -41,8 +49,8 @@ export async function generateStudyCanvas(input: GenerateStudyCanvasInput): Prom
   const fromText = raw ? parseDslFromText(raw) : null;
 
   if (!fromText) {
-    const functionError = (data as { error?: string } | null)?.error;
-    throw new Error(functionError || "Claude response did not match expected Study DSL.");
+    const responseError = (data as { error?: string } | null)?.error;
+    throw new Error(responseError || "Claude response did not match expected Study DSL.");
   }
 
   return fromText;
