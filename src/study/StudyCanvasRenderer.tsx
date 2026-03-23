@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { StudyCanvasDsl, StudyFlashCard } from "./dsl";
+import type { QuizQuestion, StudyCanvasDsl, StudyFlashCard, StudyPlanSession } from "./dsl";
 
 type Props = {
   dsl: StudyCanvasDsl;
@@ -11,13 +11,9 @@ function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [progress, setProgress] = useState<CardProgress>({});
-
   const activeCard = cards[activeIndex];
 
-  const doneCount = useMemo(
-    () => cards.filter((card) => progress[card.id] === "known").length,
-    [cards, progress],
-  );
+  const doneCount = useMemo(() => cards.filter((card) => progress[card.id] === "known").length, [cards, progress]);
 
   function moveTo(index: number) {
     setActiveIndex(index);
@@ -33,11 +29,7 @@ function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
   }
 
   function markCard(status: "known" | "again") {
-    setProgress((prev) => ({
-      ...prev,
-      [activeCard.id]: status,
-    }));
-
+    setProgress((prev) => ({ ...prev, [activeCard.id]: status }));
     nextCard();
   }
 
@@ -72,21 +64,94 @@ function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
   );
 }
 
+function QuizPanel({ questions }: { questions: QuizQuestion[] }) {
+  const [answers, setAnswers] = useState<Record<string, number | null>>({});
+  return (
+    <div className="quiz-panel">
+      {questions.map((question) => {
+        const selected = answers[question.id] ?? null;
+        const isCorrect = selected === question.answerIndex;
+
+        return (
+          <article key={question.id} className="quiz-question">
+            <p className="quiz-prompt">{question.prompt}</p>
+            <div className="quiz-options">
+              {question.options.map((option, index) => (
+                <button
+                  key={`${question.id}-${option}`}
+                  type="button"
+                  className={`quiz-option ${selected === index ? "selected" : ""}`}
+                  onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: index }))}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            {selected !== null ? (
+              <p className={`quiz-result ${isCorrect ? "good" : "bad"}`}>
+                {isCorrect ? "Correct" : "Review"}: {question.explanation}
+              </p>
+            ) : null}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function StudyPlanPanel({ sessions }: { sessions: StudyPlanSession[] }) {
+  const [done, setDone] = useState<Record<string, boolean>>({});
+
+  return (
+    <div className="plan-panel">
+      {sessions.map((session) => (
+        <article key={session.id} className="plan-session">
+          <header>
+            <h4>{session.day}</h4>
+            <p>{session.focus}</p>
+          </header>
+          <ul>
+            {session.tasks.map((task, index) => {
+              const taskId = `${session.id}-${index}`;
+              const checked = done[taskId] ?? false;
+
+              return (
+                <li key={taskId}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => setDone((prev) => ({ ...prev, [taskId]: event.target.checked }))}
+                    />
+                    <span>{task}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function StudyCanvasRenderer({ dsl }: Props) {
   return (
     <div className="study-canvas">
       <div className="study-canvas-header">
-        <p className="eyebrow">Generated Study Canvas</p>
+        <p className="eyebrow">Interactive Canvas</p>
         <h2>{dsl.title}</h2>
         <p>{dsl.summary}</p>
       </div>
-      {dsl.modules.map((module) => (
-        <section key={module.title} className="study-module">
+      {dsl.modules.map((module, index) => (
+        <section key={`${module.type}-${index}`} className="study-module">
           <header>
             <h3>{module.title}</h3>
             <p>{module.description}</p>
           </header>
           {module.type === "flashcards" ? <FlashCardDeck cards={module.cards} /> : null}
+          {module.type === "quiz" ? <QuizPanel questions={module.questions} /> : null}
+          {module.type === "study_plan" ? <StudyPlanPanel sessions={module.sessions} /> : null}
         </section>
       ))}
       {dsl.actions.length > 0 ? (

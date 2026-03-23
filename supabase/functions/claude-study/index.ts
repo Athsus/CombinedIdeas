@@ -10,7 +10,7 @@ type KnowledgeSource = {
 };
 
 type RequestPayload = {
-  skill: "flash_cards";
+  skill: "auto" | "flash_cards" | "quick_quiz" | "study_plan";
   learningGoal: string;
   difficulty: "easy" | "medium" | "hard";
   knowledgeSources: KnowledgeSource[];
@@ -42,15 +42,21 @@ function buildPrompt(payload: RequestPayload): string {
     .map((source, index) => `Source ${index + 1}: ${source.name} (${source.extension})\n${source.text}`)
     .join("\n\n---\n\n");
 
+  const skillInstruction =
+    payload.skill === "auto"
+      ? "Choose exactly one best learning method: flash_cards, quick_quiz, or study_plan."
+      : `Use the requested learning method exactly: ${payload.skill}.`;
+
   return [
     "You are generating a Study Canvas JSON DSL for a learning tool.",
     "Return JSON only. No markdown, no code fences, no extra text.",
+    skillInstruction,
     "Schema:",
     JSON.stringify(
       {
         version: "1.0",
         tool: "study_canvas",
-        skill: "flash_cards",
+        skill: "flash_cards | quick_quiz | study_plan",
         title: "string",
         summary: "string",
         modules: [
@@ -67,6 +73,33 @@ function buildPrompt(payload: RequestPayload): string {
               },
             ],
           },
+          {
+            type: "quiz",
+            title: "string",
+            description: "string",
+            questions: [
+              {
+                id: "string",
+                prompt: "string",
+                options: ["string"],
+                answerIndex: 0,
+                explanation: "string",
+              },
+            ],
+          },
+          {
+            type: "study_plan",
+            title: "string",
+            description: "string",
+            sessions: [
+              {
+                id: "string",
+                day: "string",
+                focus: "string",
+                tasks: ["string"],
+              },
+            ],
+          },
         ],
         actions: ["string"],
       },
@@ -74,10 +107,12 @@ function buildPrompt(payload: RequestPayload): string {
       2,
     ),
     "Constraints:",
-    "- skill must be flash_cards",
-    "- produce exactly one flashcards module",
-    "- generate between 10 and 16 cards",
-    "- cards should be concise and test understanding, not trivia",
+    "- version must be 1.0 and tool must be study_canvas",
+    "- produce modules that match the chosen skill",
+    "- if skill is flash_cards: include one flashcards module with 10-16 cards",
+    "- if skill is quick_quiz: include one quiz module with 6-12 questions",
+    "- if skill is study_plan: include one study_plan module with 5-10 sessions",
+    "- keep wording concise and practical",
     "- use plain text only",
     "- actions should be short actionable labels",
     `Learning goal: ${payload.learningGoal}`,
@@ -114,7 +149,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "knowledgeSources is required." }, 400);
   }
 
-  const model = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-3-7-sonnet-latest";
+  const model = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-3-5-sonnet-latest";
 
   const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

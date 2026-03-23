@@ -21,6 +21,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
+    "supabase": "^2.83.0",
     "typescript": "latest",
     "vite": "latest",
     "vitest": "latest"

@@ -25,25 +25,24 @@ export async function generateStudyCanvas(input: GenerateStudyCanvasInput): Prom
     })),
   };
 
-  const { data, error } = await supabase.functions.invoke("claude-study", {
-    body: payload,
-  });
+  const { data, error } = await supabase.functions.invoke("claude-study", { body: payload });
 
   if (error) {
-    throw new Error(error.message || "Failed to call claude-study function.");
+    const message = (data as { error?: string } | null)?.error;
+    throw new Error(message || error.message || "Failed to call claude-study function.");
   }
 
-  const fromPayload = parseDslPayload((data as { dsl?: unknown })?.dsl);
-
+  const fromPayload = parseDslPayload((data as { dsl?: unknown } | null)?.dsl);
   if (fromPayload) {
     return fromPayload;
   }
 
-  const raw = (data as { text?: string })?.text;
+  const raw = (data as { text?: string } | null)?.text;
   const fromText = raw ? parseDslFromText(raw) : null;
 
   if (!fromText) {
-    throw new Error("Claude response did not match expected Study DSL.");
+    const functionError = (data as { error?: string } | null)?.error;
+    throw new Error(functionError || "Claude response did not match expected Study DSL.");
   }
 
   return fromText;
