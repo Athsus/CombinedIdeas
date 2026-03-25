@@ -299,6 +299,91 @@
   min-height: 520px;
 }
 
+.todo-board-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.todo-board-column {
+  border: 1px solid var(--todo-border);
+  border-radius: 18px;
+  background: var(--todo-panel);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 320px;
+}
+
+.todo-board-column.overdue {
+  background: linear-gradient(180deg, #ffffff, #fff6f5);
+}
+
+.todo-board-column.soon {
+  background: linear-gradient(180deg, #ffffff, #fffaf0);
+}
+
+.todo-board-column.done {
+  background: linear-gradient(180deg, #ffffff, #f7f9fc);
+}
+
+.todo-board-column-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.todo-board-column-head h3 {
+  font-size: 16px;
+}
+
+.todo-board-column-head p {
+  color: var(--todo-text-muted);
+  font-size: 12px;
+}
+
+.todo-board-column-head strong {
+  color: var(--todo-text-muted);
+  font-size: 12px;
+  border: 1px solid var(--todo-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--todo-panel-soft);
+}
+
+.todo-board-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.todo-board-column .todo-row {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.todo-board-column .todo-check {
+  margin-top: 0;
+}
+
+.todo-board-column .todo-row-body {
+  gap: 10px;
+}
+
+.todo-board-empty {
+  min-height: 120px;
+  border: 1px dashed var(--todo-border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--todo-text-muted);
+  background: var(--todo-panel-soft);
+}
+
 .todo-empty {
   min-height: 220px;
   display: flex;
@@ -609,7 +694,8 @@
   }
 
   .todo-overview-grid,
-  .todo-chart-grid {
+  .todo-chart-grid,
+  .todo-board-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -618,6 +704,7 @@
   .todo-toolbar,
   .todo-overview-grid,
   .todo-chart-grid,
+  .todo-board-grid,
   .todo-calendar-grid {
     grid-template-columns: 1fr;
   }

@@ -7,7 +7,7 @@ import "../todo.css";
 type TodoStatusTone = "overdue" | "soon" | "safe" | "done";
 type FilterKey = "all" | "open" | "due_today" | "due_soon" | "overdue" | "completed";
 type SortKey = "smart" | "due_asc" | "due_desc" | "created_desc" | "title_asc";
-type ViewKey = "list" | "calendar" | "gantt" | "charts";
+type ViewKey = "list" | "board" | "calendar" | "gantt" | "charts";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -274,6 +274,48 @@ function MiniBarChart({ items }: { items: Array<{ label: string; value: number; 
   );
 }
 
+function TodoTaskCard({
+  todo,
+  thresholdDays,
+  onToggle,
+  onDelete,
+}: {
+  todo: TodoRecord;
+  thresholdDays: number;
+  onToggle: (todo: TodoRecord) => void;
+  onDelete: (todo: TodoRecord) => void;
+}) {
+  const tone = getStatusTone(todo, thresholdDays);
+  const statusLabel = getStatusLabel(todo, thresholdDays);
+
+  return (
+    <article className={`todo-row ${tone}`}>
+      <button
+        type="button"
+        className={`todo-check ${todo.completed_at ? "checked" : ""}`}
+        aria-label={todo.completed_at ? `Mark ${todo.title} as not done` : `Mark ${todo.title} as done`}
+        onClick={() => onToggle(todo)}
+      >
+        <span />
+      </button>
+
+      <div className="todo-row-body">
+        <div className="todo-row-top">
+          <h3>{todo.title}</h3>
+          <span className={`todo-status-pill ${tone}`}>{statusLabel}</span>
+        </div>
+        {todo.details ? <p>{todo.details}</p> : null}
+        <div className="todo-row-meta">
+          <span>{formatDueLabel(todo.due_date)}</span>
+          <button type="button" className="todo-inline-button" onClick={() => onDelete(todo)}>
+            Delete
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function TodoToolPage() {
   const { session, signIn, signOut, isConfigured, isReady } = useAuth();
   const [todos, setTodos] = useState<TodoRecord[]>([]);
@@ -415,6 +457,36 @@ export default function TodoToolPage() {
       { label: "No date", value: noDate, tone: "done" as const },
     ];
   }, [todos]);
+
+  const boardColumns = useMemo(
+    () => [
+      {
+        key: "overdue",
+        title: "Overdue",
+        subtitle: "Needs attention",
+        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "overdue"),
+      },
+      {
+        key: "soon",
+        title: "Due soon",
+        subtitle: `Within ${thresholdDays} days`,
+        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "soon"),
+      },
+      {
+        key: "safe",
+        title: "Upcoming",
+        subtitle: "Scheduled later",
+        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "safe"),
+      },
+      {
+        key: "done",
+        title: "Completed",
+        subtitle: "Finished work",
+        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "done"),
+      },
+    ],
+    [filteredTodos, thresholdDays],
+  );
 
   async function handleCreateTodo(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -673,9 +745,17 @@ export default function TodoToolPage() {
         </section>
 
         <section className="todo-view-switcher">
-          {(["list", "calendar", "gantt", "charts"] as ViewKey[]).map((item) => (
+          {(["list", "board", "calendar", "gantt", "charts"] as ViewKey[]).map((item) => (
             <button key={item} type="button" className={`todo-view-chip ${view === item ? "active" : ""}`} onClick={() => setView(item)}>
-              {item === "list" ? "List" : item === "calendar" ? "Calendar" : item === "gantt" ? "Gantt" : "Charts"}
+              {item === "list"
+                ? "List"
+                : item === "board"
+                  ? "Board"
+                  : item === "calendar"
+                    ? "Calendar"
+                    : item === "gantt"
+                      ? "Gantt"
+                      : "Charts"}
             </button>
           ))}
         </section>
@@ -692,38 +772,48 @@ export default function TodoToolPage() {
               </div>
             ) : null}
             {!isLoading
-              ? filteredTodos.map((todo) => {
-                  const tone = getStatusTone(todo, thresholdDays);
-                  const statusLabel = getStatusLabel(todo, thresholdDays);
-
-                  return (
-                    <article key={todo.id} className={`todo-row ${tone}`}>
-                      <button
-                        type="button"
-                        className={`todo-check ${todo.completed_at ? "checked" : ""}`}
-                        aria-label={todo.completed_at ? `Mark ${todo.title} as not done` : `Mark ${todo.title} as done`}
-                        onClick={() => void handleToggleTodo(todo)}
-                      >
-                        <span />
-                      </button>
-
-                      <div className="todo-row-body">
-                        <div className="todo-row-top">
-                          <h3>{todo.title}</h3>
-                          <span className={`todo-status-pill ${tone}`}>{statusLabel}</span>
-                        </div>
-                        {todo.details ? <p>{todo.details}</p> : null}
-                        <div className="todo-row-meta">
-                          <span>{formatDueLabel(todo.due_date)}</span>
-                          <button type="button" className="todo-inline-button" onClick={() => void handleDeleteTodo(todo)}>
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })
+              ? filteredTodos.map((todo) => (
+                  <TodoTaskCard
+                    key={todo.id}
+                    todo={todo}
+                    thresholdDays={thresholdDays}
+                    onToggle={(item) => void handleToggleTodo(item)}
+                    onDelete={(item) => void handleDeleteTodo(item)}
+                  />
+                ))
               : null}
+          </section>
+        ) : null}
+
+        {view === "board" ? (
+          <section className="todo-board-grid">
+            {boardColumns.map((column) => (
+              <article key={column.key} className={`todo-board-column ${column.key}`}>
+                <header className="todo-board-column-head">
+                  <div>
+                    <h3>{column.title}</h3>
+                    <p>{column.subtitle}</p>
+                  </div>
+                  <strong>{column.items.length}</strong>
+                </header>
+
+                <div className="todo-board-column-body">
+                  {column.items.length === 0 ? (
+                    <div className="todo-board-empty">No tasks</div>
+                  ) : (
+                    column.items.map((todo) => (
+                      <TodoTaskCard
+                        key={todo.id}
+                        todo={todo}
+                        thresholdDays={thresholdDays}
+                        onToggle={(item) => void handleToggleTodo(item)}
+                        onDelete={(item) => void handleDeleteTodo(item)}
+                      />
+                    ))
+                  )}
+                </div>
+              </article>
+            ))}
           </section>
         ) : null}
 
