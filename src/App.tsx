@@ -3,6 +3,7 @@ import FlashCardsStudioPage from "./pages/FlashCardsStudioPage";
 import GomokuPage from "./pages/GomokuPage";
 import ProductIndexPage from "./pages/ProductIndexPage";
 import StudyToolsHomePage from "./pages/StudyToolsHomePage";
+import TodoToolPage from "./pages/TodoToolPage";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/gomoku" element={<GomokuPage />} />
         <Route path="/study-tools" element={<StudyToolsHomePage />} />
         <Route path="/study-tools/flash-cards" element={<FlashCardsStudioPage />} />
+        <Route path="/todo" element={<TodoToolPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

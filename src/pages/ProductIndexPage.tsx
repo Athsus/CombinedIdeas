@@ -27,6 +27,15 @@ export default function ProductIndexPage() {
             Play
           </Link>
         </article>
+
+        <article className="tool-card primary">
+          <p className="tool-category">Productivity</p>
+          <h2>TODO Tool</h2>
+          <p>Private task planning with Google sign-in, deadline alerts, and a focused Microsoft To Do–style dashboard.</p>
+          <Link className="button" to="/todo">
+            Open
+          </Link>
+        </article>
       </div>
     </section>
   );

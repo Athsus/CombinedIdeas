@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type Session } from "@supabase/supabase-js";
 
 export type GomokuSessionRecord = {
   outcome: "black_win" | "white_win" | "draw" | "abandoned";
@@ -10,6 +10,17 @@ export type GomokuSessionRecord = {
   finished_at: string;
 };
 
+export type TodoRecord = {
+  id: string;
+  owner_id: string;
+  title: string;
+  details: string | null;
+  due_date: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -17,11 +28,61 @@ export const supabase =
   supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
-          persistSession: false,
-          autoRefreshToken: false,
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          flowType: "pkce",
         },
       })
     : null;
+
+export async function getCurrentSession(): Promise<Session | null> {
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error) {
+    throw error;
+  }
+
+  return data.session;
+}
+
+export async function signInWithGoogle(): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const redirectTo = `${window.location.origin}${window.location.pathname}${window.location.search}#/todo`;
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo,
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
+      },
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function signOut(): Promise<void> {
+  if (!supabase) {
+    return;
+  }
+
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    throw error;
+  }
+}
 
 export async function insertGomokuSession(record: GomokuSessionRecord): Promise<void> {
   if (!supabase) {
@@ -29,6 +90,76 @@ export async function insertGomokuSession(record: GomokuSessionRecord): Promise<
   }
 
   const { error } = await supabase.from("gomoku_sessions").insert(record);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listTodos(): Promise<TodoRecord[]> {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("todos")
+    .select("id, owner_id, title, details, due_date, completed_at, created_at, updated_at")
+    .order("completed_at", { ascending: true, nullsFirst: true })
+    .order("due_date", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data satisfies TodoRecord[];
+}
+
+export async function createTodo(input: { title: string; details?: string | null; dueDate?: string | null }): Promise<TodoRecord> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { data, error } = await supabase
+    .from("todos")
+    .insert({
+      title: input.title,
+      details: input.details ?? null,
+      due_date: input.dueDate ?? null,
+    })
+    .select("id, owner_id, title, details, due_date, completed_at, created_at, updated_at")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data satisfies TodoRecord;
+}
+
+export async function updateTodoStatus(id: string, completed: boolean): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await supabase
+    .from("todos")
+    .update({
+      completed_at: completed ? new Date().toISOString() : null,
+    })
+    .eq("id", id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteTodo(id: string): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await supabase.from("todos").delete().eq("id", id);
 
   if (error) {
     throw error;
