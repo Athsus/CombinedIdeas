@@ -8,6 +8,7 @@ type TodoStatusTone = "overdue" | "soon" | "safe" | "done";
 type FilterKey = "all" | "open" | "due_today" | "due_soon" | "overdue" | "completed";
 type SortKey = "smart" | "due_asc" | "due_desc" | "created_desc" | "title_asc";
 type ViewKey = "list" | "board" | "calendar" | "gantt" | "charts";
+type LayoutMode = "simple" | "detailed";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -277,11 +278,13 @@ function MiniBarChart({ items }: { items: Array<{ label: string; value: number; 
 function TodoTaskCard({
   todo,
   thresholdDays,
+  mode,
   onToggle,
   onDelete,
 }: {
   todo: TodoRecord;
   thresholdDays: number;
+  mode: LayoutMode;
   onToggle: (todo: TodoRecord) => void;
   onDelete: (todo: TodoRecord) => void;
 }) {
@@ -289,7 +292,7 @@ function TodoTaskCard({
   const statusLabel = getStatusLabel(todo, thresholdDays);
 
   return (
-    <article className={`todo-row ${tone}`}>
+    <article className={`todo-row ${tone} ${mode}`}>
       <button
         type="button"
         className={`todo-check ${todo.completed_at ? "checked" : ""}`}
@@ -304,12 +307,14 @@ function TodoTaskCard({
           <h3>{todo.title}</h3>
           <span className={`todo-status-pill ${tone}`}>{statusLabel}</span>
         </div>
-        {todo.details ? <p>{todo.details}</p> : null}
+        {mode === "detailed" && todo.details ? <p>{todo.details}</p> : null}
         <div className="todo-row-meta">
           <span>{formatDueLabel(todo.due_date)}</span>
-          <button type="button" className="todo-inline-button" onClick={() => onDelete(todo)}>
-            Delete
-          </button>
+          {mode === "detailed" ? (
+            <button type="button" className="todo-inline-button" onClick={() => onDelete(todo)}>
+              Delete
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -326,6 +331,7 @@ export default function TodoToolPage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("smart");
   const [view, setView] = useState<ViewKey>("list");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("detailed");
   const [search, setSearch] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => startOfToday());
   const [isLoading, setIsLoading] = useState(true);
@@ -595,7 +601,7 @@ export default function TodoToolPage() {
   }
 
   return (
-    <section className="todo-workspace">
+    <section className={`todo-workspace ${layoutMode === "simple" ? "simple-mode" : "detailed-mode"}`}>
       <aside className="todo-left-rail">
         <div className="todo-brand-block">
           <p className="todo-brand-label">Tasks</p>
@@ -691,6 +697,22 @@ export default function TodoToolPage() {
             <h2>Private planner</h2>
           </div>
           <div className="todo-topbar-actions">
+            <div className="todo-mode-switch" role="tablist" aria-label="Layout mode">
+              <button
+                type="button"
+                className={`todo-mode-chip ${layoutMode === "simple" ? "active" : ""}`}
+                onClick={() => setLayoutMode("simple")}
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                className={`todo-mode-chip ${layoutMode === "detailed" ? "active" : ""}`}
+                onClick={() => setLayoutMode("detailed")}
+              >
+                Detailed
+              </button>
+            </div>
             <span className="todo-user-pill">{session.user.email ?? "Signed in"}</span>
             <button type="button" className="todo-secondary-button" onClick={() => void signOut()}>
               Sign out
@@ -725,24 +747,26 @@ export default function TodoToolPage() {
           </label>
         </section>
 
-        <section className="todo-overview-grid">
-          <article className="todo-overview-card">
-            <span>Open</span>
-            <strong>{summary.open}</strong>
-          </article>
-          <article className="todo-overview-card warning">
-            <span>Due soon</span>
-            <strong>{summary.dueSoon}</strong>
-          </article>
-          <article className="todo-overview-card danger">
-            <span>Overdue</span>
-            <strong>{summary.overdue}</strong>
-          </article>
-          <article className="todo-overview-card success">
-            <span>Completed</span>
-            <strong>{summary.completed}</strong>
-          </article>
-        </section>
+        {layoutMode === "detailed" ? (
+          <section className="todo-overview-grid">
+            <article className="todo-overview-card">
+              <span>Open</span>
+              <strong>{summary.open}</strong>
+            </article>
+            <article className="todo-overview-card warning">
+              <span>Due soon</span>
+              <strong>{summary.dueSoon}</strong>
+            </article>
+            <article className="todo-overview-card danger">
+              <span>Overdue</span>
+              <strong>{summary.overdue}</strong>
+            </article>
+            <article className="todo-overview-card success">
+              <span>Completed</span>
+              <strong>{summary.completed}</strong>
+            </article>
+          </section>
+        ) : null}
 
         <section className="todo-view-switcher">
           {(["list", "board", "calendar", "gantt", "charts"] as ViewKey[]).map((item) => (
@@ -777,6 +801,7 @@ export default function TodoToolPage() {
                     key={todo.id}
                     todo={todo}
                     thresholdDays={thresholdDays}
+                    mode={layoutMode}
                     onToggle={(item) => void handleToggleTodo(item)}
                     onDelete={(item) => void handleDeleteTodo(item)}
                   />
@@ -806,6 +831,7 @@ export default function TodoToolPage() {
                         key={todo.id}
                         todo={todo}
                         thresholdDays={thresholdDays}
+                        mode={layoutMode}
                         onToggle={(item) => void handleToggleTodo(item)}
                         onDelete={(item) => void handleDeleteTodo(item)}
                       />
@@ -854,12 +880,14 @@ export default function TodoToolPage() {
                   <div key={key} className={`todo-calendar-cell ${isCurrentMonth ? "" : "muted"} ${isToday ? "today" : ""}`}>
                     <div className="todo-calendar-date">{formatDayNumber(day)}</div>
                     <div className="todo-calendar-events">
-                      {items.slice(0, 3).map((todo) => (
+                      {items.slice(0, layoutMode === "simple" ? 2 : 3).map((todo) => (
                         <div key={todo.id} className={`todo-calendar-event ${getStatusTone(todo, thresholdDays)}`}>
                           {todo.title}
                         </div>
                       ))}
-                      {items.length > 3 ? <div className="todo-calendar-more">+{items.length - 3} more</div> : null}
+                      {items.length > (layoutMode === "simple" ? 2 : 3) ? (
+                        <div className="todo-calendar-more">+{items.length - (layoutMode === "simple" ? 2 : 3)} more</div>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -921,7 +949,7 @@ export default function TodoToolPage() {
           </section>
         ) : null}
 
-        {view === "charts" ? (
+        {view === "charts" && layoutMode === "detailed" ? (
           <section className="todo-chart-grid">
             <article className="todo-content-card">
               <div className="todo-panel-heading">
@@ -945,6 +973,15 @@ export default function TodoToolPage() {
               </div>
               <MiniBarChart items={chartDueBuckets} />
             </article>
+          </section>
+        ) : null}
+
+        {view === "charts" && layoutMode === "simple" ? (
+          <section className="todo-content-card">
+            <div className="todo-panel-heading">
+              <h3>Charts hidden in simple mode</h3>
+              <p>Switch to Detailed layout to open dashboard charts.</p>
+            </div>
           </section>
         ) : null}
       </main>
