@@ -47,11 +47,21 @@
 
 ### Next
 
+- TODO: 下一步先去 Claude 里看看它是如何构建这个功能的，然后回来再告诉 Codex 需要怎么做（当前实现不够好，需要按对照结果继续改）。
 - Connect this repository to your GitHub account.
 - Push the project to your GitHub repository.
 - Enable GitHub Pages deployment permissions if needed.
 - Run `supabase.sql` in the remote Supabase project if the table does not exist yet.
 - Confirm GitHub Pages is enabled for the target repository.
+- Expand the TODO Tool toward an Asana-style planning layer after the Microsoft To Do redesign ships:
+  - saved views / tabs for list, calendar, gantt, and dashboard
+  - sections / board columns and drag-drop workflow stages
+  - intake forms that create tasks
+  - goals / milestones tied to groups of tasks
+  - portfolio view across multiple projects or lists
+  - workload / capacity planning by owner and date
+  - automation rules for due-soon, section moves, and reminders
+  - status updates / progress summaries for plans
 
 ## Decisions
 
