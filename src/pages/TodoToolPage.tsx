@@ -1,7 +1,7 @@
-import { type DragEvent, type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
-import { createTodo, deleteTodo, listTodos, moveTodoToSection, type TodoRecord, updateTodo, updateTodoStatus } from "../supabase";
+import { createTodo, deleteTodo, invokeTodoAgent, listTodos, moveTodoToSection, syncTodosToGoogleCalendar, type TodoRecord, updateTodo, updateTodoStatus } from "../supabase";
 import "../todo.css";
 
 type TodoStatusTone = "overdue" | "soon" | "safe" | "done";
@@ -9,6 +9,7 @@ type FilterKey = "all" | "open" | "due_today" | "due_soon" | "overdue" | "comple
 type SortKey = "smart" | "due_asc" | "due_desc" | "created_desc" | "title_asc";
 type ViewKey = "list" | "board" | "calendar" | "gantt" | "charts";
 type LayoutMode = "simple" | "detailed";
+type ChatMessage = { role: "assistant" | "user"; text: string };
 
 type TodoDraft = {
   title: string;
@@ -398,6 +399,16 @@ export default function TodoToolPage() {
   const [selectedProject, setSelectedProject] = useState<string>("All Projects");
   const [calendarMonth, setCalendarMonth] = useState(() => startOfToday());
   const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      text: 'I can manage your todos with natural language. Try: add "finish launch brief" tomorrow in project work section inbox goal q2.',
+    },
+  ]);
+  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isCalendarSyncing, setIsCalendarSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -699,6 +710,60 @@ export default function TodoToolPage() {
     }
   }
 
+  async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const message = chatInput.trim();
+    if (!message) {
+      return;
+    }
+
+    setChatMessages((current) => [...current, { role: "user", text: message }]);
+    setChatInput("");
+    setIsChatLoading(true);
+
+    try {
+      const providerToken = session?.provider_token ?? null;
+      const result = await invokeTodoAgent({
+        message,
+        providerToken,
+        autoSyncCalendar: Boolean(providerToken),
+      });
+
+      setTodos(result.todos);
+      setChatMessages((current) => [...current, { role: "assistant", text: result.reply }]);
+    } catch (chatError) {
+      const text = chatError instanceof Error ? chatError.message : "Chat command failed.";
+      setChatMessages((current) => [...current, { role: "assistant", text }]);
+      setError(text);
+    } finally {
+      setIsChatLoading(false);
+    }
+  }
+
+  async function handleCalendarSync() {
+    const providerToken = session?.provider_token;
+
+    if (!providerToken) {
+      await signIn("https://www.googleapis.com/auth/calendar.events");
+      return;
+    }
+
+    setIsCalendarSyncing(true);
+
+    try {
+      const result = await syncTodosToGoogleCalendar(providerToken);
+      setTodos(result.todos);
+      setChatMessages((current) => [...current, { role: "assistant", text: `Synced ${result.synced} task${result.synced === 1 ? "" : "s"} to Google Calendar.` }]);
+    } catch (syncError) {
+      const text = syncError instanceof Error ? syncError.message : "Calendar sync failed.";
+      setError(text);
+      setChatMessages((current) => [...current, { role: "assistant", text }]);
+    } finally {
+      setIsCalendarSyncing(false);
+    }
+  }
+
   if (!isConfigured) {
     return (
       <section className="todo-workspace todo-auth-shell">
@@ -744,6 +809,8 @@ export default function TodoToolPage() {
       </section>
     );
   }
+
+  const activeSession = session;
 
   return (
     <section className={`todo-workspace ${layoutMode === "simple" ? "simple-mode" : "detailed-mode"}`}>
@@ -887,7 +954,10 @@ export default function TodoToolPage() {
                 Detailed
               </button>
             </div>
-            <span className="todo-user-pill">{session.user.email ?? "Signed in"}</span>
+            <span className="todo-user-pill">{activeSession.user.email ?? "Signed in"}</span>
+            <button type="button" className="todo-secondary-button" onClick={() => void handleCalendarSync()}>
+              {isCalendarSyncing ? "Syncing..." : activeSession.provider_token ? "Sync Google Calendar" : "Connect Calendar"}
+            </button>
             <button type="button" className="todo-secondary-button" onClick={() => void signOut()}>
               Sign out
             </button>
@@ -1193,6 +1263,43 @@ export default function TodoToolPage() {
           </section>
         ) : null}
       </main>
+
+      <aside className={`todo-chat-dock ${isChatOpen ? "open" : "closed"}`}>
+        <button type="button" className="todo-chat-toggle" onClick={() => setIsChatOpen((current) => !current)}>
+          {isChatOpen ? "Hide MCP Chat" : "Open MCP Chat"}
+        </button>
+
+        {isChatOpen ? (
+          <div className="todo-chat-panel">
+            <div className="todo-chat-head">
+              <div>
+                <strong>MCP Task Chat</strong>
+                <p>Use natural language to create, update, delete, list, and sync tasks.</p>
+              </div>
+            </div>
+
+            <div className="todo-chat-body">
+              {chatMessages.map((message, index) => (
+                <div key={`${message.role}-${index}`} className={`todo-chat-bubble ${message.role}`}>
+                  {message.text}
+                </div>
+              ))}
+            </div>
+
+            <form className="todo-chat-form" onSubmit={handleChatSubmit}>
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                rows={3}
+                placeholder='Example: add "book dentist" tomorrow in project personal section inbox'
+              />
+              <button type="submit" className="todo-primary-button" disabled={isChatLoading}>
+                {isChatLoading ? "Working..." : "Send"}
+              </button>
+            </form>
+          </div>
+        ) : null}
+      </aside>
     </section>
   );
 }

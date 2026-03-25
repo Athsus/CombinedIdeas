@@ -6,7 +6,7 @@ type AuthContextValue = {
   isReady: boolean;
   isConfigured: boolean;
   session: Session | null;
-  signIn: () => Promise<void>;
+  signIn: (scopes?: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 

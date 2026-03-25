@@ -242,6 +242,102 @@
   min-width: 0;
 }
 
+.todo-chat-dock {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.todo-chat-toggle {
+  border: 1px solid var(--todo-blue);
+  background: var(--todo-blue);
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.todo-chat-panel {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--todo-border);
+  background: var(--todo-panel);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(39, 61, 92, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.todo-chat-head,
+.todo-chat-form {
+  padding: 14px;
+}
+
+.todo-chat-head {
+  border-bottom: 1px solid var(--todo-border);
+}
+
+.todo-chat-head p {
+  color: var(--todo-text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.todo-chat-body {
+  max-height: 320px;
+  overflow: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--todo-panel-soft);
+}
+
+.todo-chat-bubble {
+  max-width: 92%;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.todo-chat-bubble.user {
+  align-self: flex-end;
+  background: var(--todo-blue);
+  color: #fff;
+}
+
+.todo-chat-bubble.assistant {
+  align-self: flex-start;
+  background: var(--todo-panel);
+  border: 1px solid var(--todo-border);
+  color: var(--todo-text);
+}
+
+.todo-chat-form {
+  border-top: 1px solid var(--todo-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.todo-chat-form textarea {
+  width: 100%;
+  border: 1px solid var(--todo-border-strong);
+  border-radius: 12px;
+  background: var(--todo-panel);
+  color: var(--todo-text);
+  padding: 10px 12px;
+  resize: vertical;
+  font: inherit;
+}
+
 .todo-topbar {
   display: flex;
   align-items: center;
@@ -909,5 +1005,10 @@
 
   .todo-gantt-row {
     grid-template-columns: 1fr;
+  }
+
+  .todo-chat-dock {
+    right: 16px;
+    bottom: 16px;
   }
 }

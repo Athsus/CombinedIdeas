@@ -33,6 +33,7 @@ create table if not exists public.todos (
   section_name text not null default 'Inbox',
   goal_name text null,
   is_milestone boolean not null default false,
+  google_calendar_event_id text null,
   due_date date null,
   completed_at timestamptz null,
   created_at timestamptz not null default timezone('utc', now()),
@@ -43,6 +44,7 @@ alter table public.todos add column if not exists project_name text not null def
 alter table public.todos add column if not exists section_name text not null default 'Inbox';
 alter table public.todos add column if not exists goal_name text null;
 alter table public.todos add column if not exists is_milestone boolean not null default false;
+alter table public.todos add column if not exists google_calendar_event_id text null;
 
 alter table public.todos drop constraint if exists todos_project_name_check;
 alter table public.todos drop constraint if exists todos_section_name_check;

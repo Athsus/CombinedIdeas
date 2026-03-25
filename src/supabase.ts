@@ -19,6 +19,7 @@ export type TodoRecord = {
   section_name: string;
   goal_name: string | null;
   is_milestone: boolean;
+  google_calendar_event_id: string | null;
   due_date: string | null;
   completed_at: string | null;
   created_at: string;
@@ -54,7 +55,7 @@ export async function getCurrentSession(): Promise<Session | null> {
   return data.session;
 }
 
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(scopes = "https://www.googleapis.com/auth/calendar.events"): Promise<void> {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
@@ -64,6 +65,7 @@ export async function signInWithGoogle(): Promise<void> {
     provider: "google",
     options: {
       redirectTo,
+      scopes,
       queryParams: {
         access_type: "offline",
         prompt: "consent",
@@ -107,7 +109,7 @@ export async function listTodos(): Promise<TodoRecord[]> {
 
   const { data, error } = await supabase
     .from("todos")
-    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, due_date, completed_at, created_at, updated_at")
+    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, google_calendar_event_id, due_date, completed_at, created_at, updated_at")
     .order("completed_at", { ascending: true, nullsFirst: true })
     .order("project_name", { ascending: true })
     .order("section_name", { ascending: true })
@@ -145,7 +147,7 @@ export async function createTodo(input: {
       is_milestone: input.isMilestone ?? false,
       due_date: input.dueDate ?? null,
     })
-    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, due_date, completed_at, created_at, updated_at")
+    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, google_calendar_event_id, due_date, completed_at, created_at, updated_at")
     .single();
 
   if (error) {
@@ -244,4 +246,63 @@ export async function deleteTodo(id: string): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+export async function invokeTodoAgent(input: {
+  message: string;
+  providerToken?: string | null;
+  autoSyncCalendar?: boolean;
+}): Promise<{
+  reply: string;
+  todos: TodoRecord[];
+}> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { data, error } = await supabase.functions.invoke("todo-agent", {
+    body: input,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data?.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "Todo agent failed.");
+  }
+
+  return {
+    reply: typeof data.reply === "string" ? data.reply : "Done.",
+    todos: Array.isArray(data.todos) ? (data.todos as TodoRecord[]) : [],
+  };
+}
+
+export async function syncTodosToGoogleCalendar(providerToken: string): Promise<{
+  synced: number;
+  todos: TodoRecord[];
+}> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { data, error } = await supabase.functions.invoke("todo-agent", {
+    body: {
+      action: "sync_calendar",
+      providerToken,
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data?.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "Calendar sync failed.");
+  }
+
+  return {
+    synced: typeof data.synced === "number" ? data.synced : 0,
+    todos: Array.isArray(data.todos) ? (data.todos as TodoRecord[]) : [],
+  };
 }
