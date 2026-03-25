@@ -29,13 +29,36 @@ create table if not exists public.todos (
   owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   title text not null check (char_length(trim(title)) between 1 and 120),
   details text null check (details is null or char_length(details) <= 400),
+  project_name text not null default 'Personal',
+  section_name text not null default 'Inbox',
+  goal_name text null,
+  is_milestone boolean not null default false,
   due_date date null,
   completed_at timestamptz null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.todos add column if not exists project_name text not null default 'Personal';
+alter table public.todos add column if not exists section_name text not null default 'Inbox';
+alter table public.todos add column if not exists goal_name text null;
+alter table public.todos add column if not exists is_milestone boolean not null default false;
+
+alter table public.todos drop constraint if exists todos_project_name_check;
+alter table public.todos drop constraint if exists todos_section_name_check;
+alter table public.todos drop constraint if exists todos_goal_name_check;
+
+alter table public.todos
+add constraint todos_project_name_check check (char_length(trim(project_name)) between 1 and 80);
+
+alter table public.todos
+add constraint todos_section_name_check check (char_length(trim(section_name)) between 1 and 80);
+
+alter table public.todos
+add constraint todos_goal_name_check check (goal_name is null or char_length(trim(goal_name)) between 1 and 120);
+
 create index if not exists todos_owner_due_idx on public.todos (owner_id, due_date, created_at desc);
+create index if not exists todos_owner_project_section_idx on public.todos (owner_id, project_name, section_name);
 
 create or replace function public.set_todo_updated_at()
 returns trigger

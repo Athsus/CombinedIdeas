@@ -1,7 +1,7 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type DragEvent, type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
-import { createTodo, deleteTodo, listTodos, type TodoRecord, updateTodoStatus } from "../supabase";
+import { createTodo, deleteTodo, listTodos, moveTodoToSection, type TodoRecord, updateTodo, updateTodoStatus } from "../supabase";
 import "../todo.css";
 
 type TodoStatusTone = "overdue" | "soon" | "safe" | "done";
@@ -10,7 +10,37 @@ type SortKey = "smart" | "due_asc" | "due_desc" | "created_desc" | "title_asc";
 type ViewKey = "list" | "board" | "calendar" | "gantt" | "charts";
 type LayoutMode = "simple" | "detailed";
 
+type TodoDraft = {
+  title: string;
+  details: string;
+  dueDate: string;
+  projectName: string;
+  sectionName: string;
+  goalName: string;
+  isMilestone: boolean;
+};
+
+const DEFAULT_PROJECT = "Personal";
+const DEFAULT_SECTION = "Inbox";
+const DEFAULT_BOARD_SECTIONS = ["Inbox", "In Progress", "Waiting", "Done"];
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function createEmptyDraft(projectName = DEFAULT_PROJECT, sectionName = DEFAULT_SECTION): TodoDraft {
+  return {
+    title: "",
+    details: "",
+    dueDate: "",
+    projectName,
+    sectionName,
+    goalName: "",
+    isMilestone: false,
+  };
+}
+
+function trimOrFallback(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
 
 function startOfToday(): Date {
   const today = new Date();
@@ -50,12 +80,12 @@ function formatDueLabel(dueDate: string | null): string {
   });
 }
 
-function formatDayNumber(date: Date): string {
-  return date.toLocaleDateString([], { day: "numeric" });
-}
-
 function formatMonthLabel(date: Date): string {
   return date.toLocaleDateString([], { month: "long", year: "numeric" });
+}
+
+function formatDayNumber(date: Date): string {
+  return date.toLocaleDateString([], { day: "numeric" });
 }
 
 function getStatusTone(todo: TodoRecord, thresholdDays: number): TodoStatusTone {
@@ -119,7 +149,7 @@ function getCalendarGrid(month: Date): Date[] {
   });
 }
 
-function getTimelineRange(todos: TodoRecord[]): { start: Date; end: Date; days: number } | null {
+function getTimelineRange(todos: TodoRecord[]): { start: Date; days: number } | null {
   const datedTodos = todos.filter((todo) => Boolean(todo.due_date));
 
   if (datedTodos.length === 0) {
@@ -135,6 +165,7 @@ function getTimelineRange(todos: TodoRecord[]): { start: Date; end: Date; days: 
       }),
     ),
   );
+
   const end = new Date(
     Math.max(
       ...datedTodos.map((todo) => {
@@ -143,8 +174,9 @@ function getTimelineRange(todos: TodoRecord[]): { start: Date; end: Date; days: 
       }),
     ),
   );
+
   const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000) + 1);
-  return { start, end, days };
+  return { start, days };
 }
 
 function differenceInDays(left: Date, right: Date): number {
@@ -257,6 +289,18 @@ function sortTodos(todos: TodoRecord[], sort: SortKey, thresholdDays: number): T
   });
 }
 
+function buildDraftFromTodo(todo: TodoRecord): TodoDraft {
+  return {
+    title: todo.title,
+    details: todo.details ?? "",
+    dueDate: todo.due_date ?? "",
+    projectName: todo.project_name,
+    sectionName: todo.section_name,
+    goalName: todo.goal_name ?? "",
+    isMilestone: todo.is_milestone,
+  };
+}
+
 function MiniBarChart({ items }: { items: Array<{ label: string; value: number; tone: TodoStatusTone | "safe" }> }) {
   const max = Math.max(1, ...items.map((item) => item.value));
 
@@ -281,18 +325,22 @@ function TodoTaskCard({
   mode,
   onToggle,
   onDelete,
+  onEdit,
+  onDragStart,
 }: {
   todo: TodoRecord;
   thresholdDays: number;
   mode: LayoutMode;
   onToggle: (todo: TodoRecord) => void;
   onDelete: (todo: TodoRecord) => void;
+  onEdit: (todo: TodoRecord) => void;
+  onDragStart?: (todo: TodoRecord) => void;
 }) {
   const tone = getStatusTone(todo, thresholdDays);
   const statusLabel = getStatusLabel(todo, thresholdDays);
 
   return (
-    <article className={`todo-row ${tone} ${mode}`}>
+    <article className={`todo-row ${tone} ${mode}`} draggable={Boolean(onDragStart)} onDragStart={() => onDragStart?.(todo)}>
       <button
         type="button"
         className={`todo-check ${todo.completed_at ? "checked" : ""}`}
@@ -307,14 +355,28 @@ function TodoTaskCard({
           <h3>{todo.title}</h3>
           <span className={`todo-status-pill ${tone}`}>{statusLabel}</span>
         </div>
+
         {mode === "detailed" && todo.details ? <p>{todo.details}</p> : null}
+
+        <div className="todo-row-tags">
+          <span className="todo-tag">{todo.project_name}</span>
+          <span className="todo-tag">{todo.section_name}</span>
+          {todo.goal_name ? <span className="todo-tag accent">{todo.goal_name}</span> : null}
+          {todo.is_milestone ? <span className="todo-tag milestone">Milestone</span> : null}
+        </div>
+
         <div className="todo-row-meta">
           <span>{formatDueLabel(todo.due_date)}</span>
-          {mode === "detailed" ? (
-            <button type="button" className="todo-inline-button" onClick={() => onDelete(todo)}>
-              Delete
+          <div className="todo-row-actions">
+            <button type="button" className="todo-inline-button" onClick={() => onEdit(todo)}>
+              Edit
             </button>
-          ) : null}
+            {mode === "detailed" ? (
+              <button type="button" className="todo-inline-button" onClick={() => onDelete(todo)}>
+                Delete
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </article>
@@ -324,16 +386,18 @@ function TodoTaskCard({
 export default function TodoToolPage() {
   const { session, signIn, signOut, isConfigured, isReady } = useAuth();
   const [todos, setTodos] = useState<TodoRecord[]>([]);
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [createDraft, setCreateDraft] = useState<TodoDraft>(() => createEmptyDraft());
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<TodoDraft>(() => createEmptyDraft());
   const [thresholdDays, setThresholdDays] = useState(7);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("smart");
   const [view, setView] = useState<ViewKey>("list");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("detailed");
   const [search, setSearch] = useState("");
+  const [selectedProject, setSelectedProject] = useState<string>("All Projects");
   const [calendarMonth, setCalendarMonth] = useState(() => startOfToday());
+  const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -371,13 +435,23 @@ export default function TodoToolPage() {
     };
   }, [session]);
 
+  const projects = useMemo(() => {
+    const values = Array.from(new Set(todos.map((todo) => todo.project_name))).sort((left, right) => left.localeCompare(right));
+    return ["All Projects", ...values];
+  }, [todos]);
+
+  const visibleTodos = useMemo(
+    () => (selectedProject === "All Projects" ? todos : todos.filter((todo) => todo.project_name === selectedProject)),
+    [selectedProject, todos],
+  );
+
   const summary = useMemo(() => {
     let overdue = 0;
     let dueSoon = 0;
     let open = 0;
     let completed = 0;
 
-    for (const todo of todos) {
+    for (const todo of visibleTodos) {
       const tone = getStatusTone(todo, thresholdDays);
 
       if (tone === "done") {
@@ -395,24 +469,67 @@ export default function TodoToolPage() {
     }
 
     return { overdue, dueSoon, open, completed };
-  }, [thresholdDays, todos]);
+  }, [thresholdDays, visibleTodos]);
 
   const filteredTodos = useMemo(() => {
     const term = search.trim().toLowerCase();
 
     return sortTodos(
-      todos.filter((todo) => {
+      visibleTodos.filter((todo) => {
         const matchesSearch =
           term.length === 0 ||
           todo.title.toLowerCase().includes(term) ||
-          (todo.details ?? "").toLowerCase().includes(term);
+          (todo.details ?? "").toLowerCase().includes(term) ||
+          todo.project_name.toLowerCase().includes(term) ||
+          todo.section_name.toLowerCase().includes(term) ||
+          (todo.goal_name ?? "").toLowerCase().includes(term);
 
         return matchesSearch && matchesFilter(todo, filter, thresholdDays);
       }),
       sort,
       thresholdDays,
     );
-  }, [filter, search, sort, thresholdDays, todos]);
+  }, [filter, search, sort, thresholdDays, visibleTodos]);
+
+  const sectionNames = useMemo(() => {
+    const dynamicSections = Array.from(new Set(filteredTodos.map((todo) => todo.section_name)));
+    return Array.from(new Set([...DEFAULT_BOARD_SECTIONS, ...dynamicSections]));
+  }, [filteredTodos]);
+
+  const goals = useMemo(() => {
+    const map = new Map<string, { total: number; completed: number; milestones: number }>();
+
+    for (const todo of filteredTodos) {
+      if (!todo.goal_name) {
+        continue;
+      }
+
+      const current = map.get(todo.goal_name) ?? { total: 0, completed: 0, milestones: 0 };
+      current.total += 1;
+      if (todo.completed_at) {
+        current.completed += 1;
+      }
+      if (todo.is_milestone) {
+        current.milestones += 1;
+      }
+      map.set(todo.goal_name, current);
+    }
+
+    return Array.from(map.entries())
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [filteredTodos]);
+
+  const boardColumns = useMemo(
+    () =>
+      sectionNames.map((sectionName) => ({
+        key: sectionName,
+        title: sectionName,
+        subtitle: filteredTodos.filter((todo) => todo.section_name === sectionName && todo.is_milestone).length > 0 ? "Contains milestones" : "Task section",
+        items: filteredTodos.filter((todo) => todo.section_name === sectionName),
+      })),
+    [filteredTodos, sectionNames],
+  );
 
   const datedTodos = useMemo(() => filteredTodos.filter((todo) => todo.due_date), [filteredTodos]);
 
@@ -432,72 +549,35 @@ export default function TodoToolPage() {
   const calendarGrid = useMemo(() => getCalendarGrid(calendarMonth), [calendarMonth]);
   const ganttRange = useMemo(() => getTimelineRange(datedTodos), [datedTodos]);
 
-  const chartDueBuckets = useMemo(() => {
-    let today = 0;
-    let thisWeek = 0;
-    let later = 0;
-    let noDate = 0;
-
-    for (const todo of todos) {
-      if (todo.completed_at) {
-        continue;
-      }
-
-      const days = daysUntilDue(todo.due_date);
-
-      if (days === null) {
-        noDate += 1;
-      } else if (days <= 0) {
-        today += 1;
-      } else if (days <= 7) {
-        thisWeek += 1;
-      } else {
-        later += 1;
-      }
-    }
-
-    return [
-      { label: "Today / overdue", value: today, tone: "overdue" as const },
-      { label: "Next 7 days", value: thisWeek, tone: "soon" as const },
-      { label: "Later", value: later, tone: "safe" as const },
-      { label: "No date", value: noDate, tone: "done" as const },
-    ];
-  }, [todos]);
-
-  const boardColumns = useMemo(
+  const chartStatusBuckets = useMemo(
     () => [
-      {
-        key: "overdue",
-        title: "Overdue",
-        subtitle: "Needs attention",
-        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "overdue"),
-      },
-      {
-        key: "soon",
-        title: "Due soon",
-        subtitle: `Within ${thresholdDays} days`,
-        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "soon"),
-      },
-      {
-        key: "safe",
-        title: "Upcoming",
-        subtitle: "Scheduled later",
-        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "safe"),
-      },
-      {
-        key: "done",
-        title: "Completed",
-        subtitle: "Finished work",
-        items: filteredTodos.filter((todo) => getStatusTone(todo, thresholdDays) === "done"),
-      },
+      { label: "Open", value: summary.open, tone: "safe" as const },
+      { label: "Due soon", value: summary.dueSoon, tone: "soon" as const },
+      { label: "Overdue", value: summary.overdue, tone: "overdue" as const },
+      { label: "Completed", value: summary.completed, tone: "done" as const },
     ],
-    [filteredTodos, thresholdDays],
+    [summary],
   );
+
+  const chartGoalBuckets = useMemo(() => {
+    const topGoals = goals.slice(0, 4);
+    return topGoals.length > 0
+      ? topGoals.map((goal) => ({ label: goal.name, value: goal.total, tone: "safe" as const }))
+      : [{ label: "No goals", value: 0, tone: "done" as const }];
+  }, [goals]);
+
+  function setCreateDraftField<K extends keyof TodoDraft>(key: K, value: TodoDraft[K]) {
+    setCreateDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setEditDraftField<K extends keyof TodoDraft>(key: K, value: TodoDraft[K]) {
+    setEditDraft((current) => ({ ...current, [key]: value }));
+  }
 
   async function handleCreateTodo(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!title.trim()) {
+    if (!createDraft.title.trim()) {
       setError("Add a task title.");
       return;
     }
@@ -507,15 +587,17 @@ export default function TodoToolPage() {
 
     try {
       const created = await createTodo({
-        title: title.trim(),
-        details: details.trim() || null,
-        dueDate: dueDate || null,
+        title: createDraft.title.trim(),
+        details: createDraft.details.trim() || null,
+        dueDate: createDraft.dueDate || null,
+        projectName: trimOrFallback(createDraft.projectName, DEFAULT_PROJECT),
+        sectionName: trimOrFallback(createDraft.sectionName, DEFAULT_SECTION),
+        goalName: createDraft.goalName.trim() || null,
+        isMilestone: createDraft.isMilestone,
       });
 
       setTodos((current) => [created, ...current]);
-      setTitle("");
-      setDetails("");
-      setDueDate("");
+      setCreateDraft(createEmptyDraft(created.project_name, created.section_name));
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create task.");
     } finally {
@@ -530,7 +612,6 @@ export default function TodoToolPage() {
     setTodos((current) =>
       current.map((item) => (item.id === todo.id ? { ...item, completed_at: optimisticCompletedAt } : item)),
     );
-    setError(null);
 
     try {
       await updateTodoStatus(todo.id, nextCompleted);
@@ -542,15 +623,79 @@ export default function TodoToolPage() {
 
   async function handleDeleteTodo(todo: TodoRecord) {
     const previous = todos;
-
     setTodos((current) => current.filter((item) => item.id !== todo.id));
-    setError(null);
 
     try {
       await deleteTodo(todo.id);
     } catch (deleteError) {
       setTodos(previous);
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete task.");
+    }
+  }
+
+  function startEditing(todo: TodoRecord) {
+    setEditingTodoId(todo.id);
+    setEditDraft(buildDraftFromTodo(todo));
+  }
+
+  async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!editingTodoId || !editDraft.title.trim()) {
+      setError("Task title is required.");
+      return;
+    }
+
+    const previous = todos;
+
+    const updatedLocal = previous.map((todo) =>
+      todo.id === editingTodoId
+        ? {
+            ...todo,
+            title: editDraft.title.trim(),
+            details: editDraft.details.trim() || null,
+            due_date: editDraft.dueDate || null,
+            project_name: trimOrFallback(editDraft.projectName, DEFAULT_PROJECT),
+            section_name: trimOrFallback(editDraft.sectionName, DEFAULT_SECTION),
+            goal_name: editDraft.goalName.trim() || null,
+            is_milestone: editDraft.isMilestone,
+          }
+        : todo,
+    );
+
+    setTodos(updatedLocal);
+    setEditingTodoId(null);
+
+    try {
+      await updateTodo(editingTodoId, {
+        title: editDraft.title.trim(),
+        details: editDraft.details.trim() || null,
+        dueDate: editDraft.dueDate || null,
+        projectName: trimOrFallback(editDraft.projectName, DEFAULT_PROJECT),
+        sectionName: trimOrFallback(editDraft.sectionName, DEFAULT_SECTION),
+        goalName: editDraft.goalName.trim() || null,
+        isMilestone: editDraft.isMilestone,
+      });
+    } catch (updateError) {
+      setTodos(previous);
+      setError(updateError instanceof Error ? updateError.message : "Failed to save task.");
+    }
+  }
+
+  async function handleDropToSection(sectionName: string) {
+    if (!draggedTodoId) {
+      return;
+    }
+
+    const previous = todos;
+    setTodos((current) => current.map((todo) => (todo.id === draggedTodoId ? { ...todo, section_name: sectionName } : todo)));
+    setDraggedTodoId(null);
+
+    try {
+      await moveTodoToSection(draggedTodoId, sectionName);
+    } catch (moveError) {
+      setTodos(previous);
+      setError(moveError instanceof Error ? moveError.message : "Failed to move task.");
     }
   }
 
@@ -612,82 +757,119 @@ export default function TodoToolPage() {
         <nav className="todo-nav">
           <button type="button" className={`todo-nav-item ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
             <span>All</span>
-            <strong>{todos.length}</strong>
+            <strong>{visibleTodos.length}</strong>
           </button>
           <button type="button" className={`todo-nav-item ${filter === "open" ? "active" : ""}`} onClick={() => setFilter("open")}>
             <span>Open</span>
             <strong>{summary.open}</strong>
           </button>
-          <button
-            type="button"
-            className={`todo-nav-item ${filter === "due_today" ? "active" : ""}`}
-            onClick={() => setFilter("due_today")}
-          >
+          <button type="button" className={`todo-nav-item ${filter === "due_today" ? "active" : ""}`} onClick={() => setFilter("due_today")}>
             <span>Today</span>
-            <strong>{todos.filter((todo) => !todo.completed_at && daysUntilDue(todo.due_date) === 0).length}</strong>
+            <strong>{visibleTodos.filter((todo) => !todo.completed_at && daysUntilDue(todo.due_date) === 0).length}</strong>
           </button>
-          <button
-            type="button"
-            className={`todo-nav-item ${filter === "due_soon" ? "active" : ""}`}
-            onClick={() => setFilter("due_soon")}
-          >
+          <button type="button" className={`todo-nav-item ${filter === "due_soon" ? "active" : ""}`} onClick={() => setFilter("due_soon")}>
             <span>Planned</span>
             <strong>{summary.dueSoon}</strong>
           </button>
-          <button
-            type="button"
-            className={`todo-nav-item ${filter === "overdue" ? "active" : ""}`}
-            onClick={() => setFilter("overdue")}
-          >
+          <button type="button" className={`todo-nav-item ${filter === "overdue" ? "active" : ""}`} onClick={() => setFilter("overdue")}>
             <span>Overdue</span>
             <strong>{summary.overdue}</strong>
           </button>
-          <button
-            type="button"
-            className={`todo-nav-item ${filter === "completed" ? "active" : ""}`}
-            onClick={() => setFilter("completed")}
-          >
+          <button type="button" className={`todo-nav-item ${filter === "completed" ? "active" : ""}`} onClick={() => setFilter("completed")}>
             <span>Completed</span>
             <strong>{summary.completed}</strong>
           </button>
         </nav>
 
+        <section className="todo-project-panel">
+          <div className="todo-panel-heading">
+            <h2>Projects</h2>
+            <p>Group work by project and section.</p>
+          </div>
+          <div className="todo-project-list">
+            {projects.map((project) => (
+              <button
+                key={project}
+                type="button"
+                className={`todo-project-chip ${selectedProject === project ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedProject(project);
+                  setCreateDraft((current) => ({
+                    ...current,
+                    projectName: project === "All Projects" ? DEFAULT_PROJECT : project,
+                  }));
+                }}
+              >
+                {project}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="todo-quick-panel">
           <div className="todo-panel-heading">
             <h2>Add a task</h2>
-            <p>Simple capture, visible due dates.</p>
+            <p>Project, section, goal, and milestone ready.</p>
           </div>
 
           <form className="todo-form" onSubmit={handleCreateTodo}>
             <label>
               Task title
-              <input
-                type="text"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Prepare Monday review"
-                maxLength={120}
-              />
+              <input type="text" value={createDraft.title} onChange={(event) => setCreateDraftField("title", event.target.value)} placeholder="Prepare Monday review" maxLength={120} />
             </label>
             <label>
               Notes
-              <textarea
-                value={details}
-                onChange={(event) => setDetails(event.target.value)}
-                rows={3}
-                placeholder="Optional context"
-                maxLength={400}
-              />
+              <textarea value={createDraft.details} onChange={(event) => setCreateDraftField("details", event.target.value)} rows={3} placeholder="Optional context" maxLength={400} />
             </label>
-            <label>
-              Due date
-              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+            <div className="todo-two-column-fields">
+              <label>
+                Project
+                <input type="text" value={createDraft.projectName} onChange={(event) => setCreateDraftField("projectName", event.target.value)} placeholder="Personal" maxLength={80} />
+              </label>
+              <label>
+                Section
+                <input type="text" value={createDraft.sectionName} onChange={(event) => setCreateDraftField("sectionName", event.target.value)} placeholder="Inbox" maxLength={80} />
+              </label>
+            </div>
+            <div className="todo-two-column-fields">
+              <label>
+                Goal
+                <input type="text" value={createDraft.goalName} onChange={(event) => setCreateDraftField("goalName", event.target.value)} placeholder="Q2 launch" maxLength={120} />
+              </label>
+              <label>
+                Due date
+                <input type="date" value={createDraft.dueDate} onChange={(event) => setCreateDraftField("dueDate", event.target.value)} />
+              </label>
+            </div>
+            <label className="todo-checkbox-field">
+              <input type="checkbox" checked={createDraft.isMilestone} onChange={(event) => setCreateDraftField("isMilestone", event.target.checked)} />
+              <span>Mark as milestone</span>
             </label>
             <button type="submit" className="todo-primary-button" disabled={isSaving}>
               {isSaving ? "Saving..." : "Add task"}
             </button>
           </form>
         </section>
+
+        {goals.length > 0 ? (
+          <section className="todo-goals-panel">
+            <div className="todo-panel-heading">
+              <h2>Goals</h2>
+              <p>Milestones and task progress by goal.</p>
+            </div>
+            <div className="todo-goal-list">
+              {goals.map((goal) => (
+                <article key={goal.name} className="todo-goal-card">
+                  <strong>{goal.name}</strong>
+                  <span>
+                    {goal.completed}/{goal.total} done
+                  </span>
+                  <span>{goal.milestones} milestones</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </aside>
 
       <main className="todo-main-shell">
@@ -698,18 +880,10 @@ export default function TodoToolPage() {
           </div>
           <div className="todo-topbar-actions">
             <div className="todo-mode-switch" role="tablist" aria-label="Layout mode">
-              <button
-                type="button"
-                className={`todo-mode-chip ${layoutMode === "simple" ? "active" : ""}`}
-                onClick={() => setLayoutMode("simple")}
-              >
+              <button type="button" className={`todo-mode-chip ${layoutMode === "simple" ? "active" : ""}`} onClick={() => setLayoutMode("simple")}>
                 Simple
               </button>
-              <button
-                type="button"
-                className={`todo-mode-chip ${layoutMode === "detailed" ? "active" : ""}`}
-                onClick={() => setLayoutMode("detailed")}
-              >
+              <button type="button" className={`todo-mode-chip ${layoutMode === "detailed" ? "active" : ""}`} onClick={() => setLayoutMode("detailed")}>
                 Detailed
               </button>
             </div>
@@ -722,9 +896,8 @@ export default function TodoToolPage() {
 
         <section className="todo-toolbar">
           <div className="todo-search-wrap">
-            <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" />
+            <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks, projects, goals" />
           </div>
-
           <label className="todo-select-field">
             <span>Sort</span>
             <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
@@ -735,7 +908,6 @@ export default function TodoToolPage() {
               <option value="title_asc">Title</option>
             </select>
           </label>
-
           <label className="todo-select-field">
             <span>Alert window</span>
             <select value={thresholdDays} onChange={(event) => setThresholdDays(Number(event.target.value))}>
@@ -771,18 +943,61 @@ export default function TodoToolPage() {
         <section className="todo-view-switcher">
           {(["list", "board", "calendar", "gantt", "charts"] as ViewKey[]).map((item) => (
             <button key={item} type="button" className={`todo-view-chip ${view === item ? "active" : ""}`} onClick={() => setView(item)}>
-              {item === "list"
-                ? "List"
-                : item === "board"
-                  ? "Board"
-                  : item === "calendar"
-                    ? "Calendar"
-                    : item === "gantt"
-                      ? "Gantt"
-                      : "Charts"}
+              {item === "list" ? "List" : item === "board" ? "Board" : item === "calendar" ? "Calendar" : item === "gantt" ? "Gantt" : "Charts"}
             </button>
           ))}
         </section>
+
+        {editingTodoId ? (
+          <section className="todo-content-card">
+            <div className="todo-panel-heading">
+              <h3>Edit task</h3>
+              <p>Update title, grouping, goal, milestone, and due date.</p>
+            </div>
+            <form className="todo-form" onSubmit={handleSaveEdit}>
+              <label>
+                Task title
+                <input type="text" value={editDraft.title} onChange={(event) => setEditDraftField("title", event.target.value)} maxLength={120} />
+              </label>
+              <label>
+                Notes
+                <textarea value={editDraft.details} onChange={(event) => setEditDraftField("details", event.target.value)} rows={3} maxLength={400} />
+              </label>
+              <div className="todo-two-column-fields">
+                <label>
+                  Project
+                  <input type="text" value={editDraft.projectName} onChange={(event) => setEditDraftField("projectName", event.target.value)} maxLength={80} />
+                </label>
+                <label>
+                  Section
+                  <input type="text" value={editDraft.sectionName} onChange={(event) => setEditDraftField("sectionName", event.target.value)} maxLength={80} />
+                </label>
+              </div>
+              <div className="todo-two-column-fields">
+                <label>
+                  Goal
+                  <input type="text" value={editDraft.goalName} onChange={(event) => setEditDraftField("goalName", event.target.value)} maxLength={120} />
+                </label>
+                <label>
+                  Due date
+                  <input type="date" value={editDraft.dueDate} onChange={(event) => setEditDraftField("dueDate", event.target.value)} />
+                </label>
+              </div>
+              <label className="todo-checkbox-field">
+                <input type="checkbox" checked={editDraft.isMilestone} onChange={(event) => setEditDraftField("isMilestone", event.target.checked)} />
+                <span>Mark as milestone</span>
+              </label>
+              <div className="todo-editor-actions">
+                <button type="submit" className="todo-primary-button">
+                  Save changes
+                </button>
+                <button type="button" className="todo-secondary-button" onClick={() => setEditingTodoId(null)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        ) : null}
 
         {error ? <p className="error-text">{error}</p> : null}
 
@@ -804,6 +1019,7 @@ export default function TodoToolPage() {
                     mode={layoutMode}
                     onToggle={(item) => void handleToggleTodo(item)}
                     onDelete={(item) => void handleDeleteTodo(item)}
+                    onEdit={startEditing}
                   />
                 ))
               : null}
@@ -813,7 +1029,12 @@ export default function TodoToolPage() {
         {view === "board" ? (
           <section className="todo-board-grid">
             {boardColumns.map((column) => (
-              <article key={column.key} className={`todo-board-column ${column.key}`}>
+              <article
+                key={column.key}
+                className="todo-board-column"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => void handleDropToSection(column.title)}
+              >
                 <header className="todo-board-column-head">
                   <div>
                     <h3>{column.title}</h3>
@@ -824,7 +1045,7 @@ export default function TodoToolPage() {
 
                 <div className="todo-board-column-body">
                   {column.items.length === 0 ? (
-                    <div className="todo-board-empty">No tasks</div>
+                    <div className="todo-board-empty">Drop tasks here</div>
                   ) : (
                     column.items.map((todo) => (
                       <TodoTaskCard
@@ -834,6 +1055,8 @@ export default function TodoToolPage() {
                         mode={layoutMode}
                         onToggle={(item) => void handleToggleTodo(item)}
                         onDelete={(item) => void handleDeleteTodo(item)}
+                        onEdit={startEditing}
+                        onDragStart={(item) => setDraggedTodoId(item.id)}
                       />
                     ))
                   )}
@@ -846,19 +1069,11 @@ export default function TodoToolPage() {
         {view === "calendar" ? (
           <section className="todo-content-card">
             <div className="todo-calendar-head">
-              <button
-                type="button"
-                className="todo-inline-button"
-                onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
-              >
+              <button type="button" className="todo-inline-button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
                 Previous
               </button>
               <h3>{formatMonthLabel(calendarMonth)}</h3>
-              <button
-                type="button"
-                className="todo-inline-button"
-                onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
-              >
+              <button type="button" className="todo-inline-button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
                 Next
               </button>
             </div>
@@ -869,25 +1084,24 @@ export default function TodoToolPage() {
                   {day}
                 </span>
               ))}
-
               {calendarGrid.map((day) => {
                 const key = toIsoDay(day);
                 const items = calendarItems.get(key) ?? [];
                 const isCurrentMonth = isSameMonth(day, calendarMonth);
                 const isToday = key === toIsoDay(startOfToday());
+                const maxVisible = layoutMode === "simple" ? 2 : 3;
 
                 return (
                   <div key={key} className={`todo-calendar-cell ${isCurrentMonth ? "" : "muted"} ${isToday ? "today" : ""}`}>
                     <div className="todo-calendar-date">{formatDayNumber(day)}</div>
                     <div className="todo-calendar-events">
-                      {items.slice(0, layoutMode === "simple" ? 2 : 3).map((todo) => (
-                        <div key={todo.id} className={`todo-calendar-event ${getStatusTone(todo, thresholdDays)}`}>
+                      {items.slice(0, maxVisible).map((todo) => (
+                        <div key={todo.id} className={`todo-calendar-event ${getStatusTone(todo, thresholdDays)} ${todo.is_milestone ? "milestone" : ""}`}>
+                          {todo.is_milestone ? "◆ " : ""}
                           {todo.title}
                         </div>
                       ))}
-                      {items.length > (layoutMode === "simple" ? 2 : 3) ? (
-                        <div className="todo-calendar-more">+{items.length - (layoutMode === "simple" ? 2 : 3)} more</div>
-                      ) : null}
+                      {items.length > maxVisible ? <div className="todo-calendar-more">+{items.length - maxVisible} more</div> : null}
                     </div>
                   </div>
                 );
@@ -909,9 +1123,7 @@ export default function TodoToolPage() {
                   {Array.from({ length: ganttRange.days }, (_, index) => {
                     const day = new Date(ganttRange.start);
                     day.setDate(ganttRange.start.getDate() + index);
-                    return (
-                      <span key={toIsoDay(day)}>{day.toLocaleDateString([], { month: "short", day: "numeric" })}</span>
-                    );
+                    return <span key={toIsoDay(day)}>{day.toLocaleDateString([], { month: "short", day: "numeric" })}</span>;
                   })}
                 </div>
 
@@ -929,15 +1141,18 @@ export default function TodoToolPage() {
                   return (
                     <div key={todo.id} className="todo-gantt-row">
                       <div className="todo-gantt-label">
-                        <strong>{todo.title}</strong>
-                        <span>{formatDueLabel(todo.due_date)}</span>
+                        <strong>{todo.is_milestone ? "◆ " : ""}{todo.title}</strong>
+                        <span>
+                          {todo.project_name} / {todo.section_name}
+                          {todo.goal_name ? ` / ${todo.goal_name}` : ""}
+                        </span>
                       </div>
                       <div className="todo-gantt-track">
                         <div
-                          className={`todo-gantt-bar ${getStatusTone(todo, thresholdDays)}`}
+                          className={`todo-gantt-bar ${getStatusTone(todo, thresholdDays)} ${todo.is_milestone ? "milestone" : ""}`}
                           style={{
                             left: `${(offset / ganttRange.days) * 100}%`,
-                            width: `${Math.max((span / ganttRange.days) * 100, 3)}%`,
+                            width: `${Math.max((span / ganttRange.days) * 100, todo.is_milestone ? 2 : 3)}%`,
                           }}
                         />
                       </div>
@@ -956,22 +1171,15 @@ export default function TodoToolPage() {
                 <h3>Status snapshot</h3>
                 <p>Fast read of current task pressure.</p>
               </div>
-              <MiniBarChart
-                items={[
-                  { label: "Open", value: summary.open, tone: "safe" },
-                  { label: "Due soon", value: summary.dueSoon, tone: "soon" },
-                  { label: "Overdue", value: summary.overdue, tone: "overdue" },
-                  { label: "Completed", value: summary.completed, tone: "done" },
-                ]}
-              />
+              <MiniBarChart items={chartStatusBuckets} />
             </article>
 
             <article className="todo-content-card">
               <div className="todo-panel-heading">
-                <h3>Calendar pressure</h3>
-                <p>How work is distributed by due date.</p>
+                <h3>Goal coverage</h3>
+                <p>How work is distributed across active goals.</p>
               </div>
-              <MiniBarChart items={chartDueBuckets} />
+              <MiniBarChart items={chartGoalBuckets} />
             </article>
           </section>
         ) : null}

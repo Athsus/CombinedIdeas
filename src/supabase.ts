@@ -15,6 +15,10 @@ export type TodoRecord = {
   owner_id: string;
   title: string;
   details: string | null;
+  project_name: string;
+  section_name: string;
+  goal_name: string | null;
+  is_milestone: boolean;
   due_date: string | null;
   completed_at: string | null;
   created_at: string;
@@ -103,8 +107,10 @@ export async function listTodos(): Promise<TodoRecord[]> {
 
   const { data, error } = await supabase
     .from("todos")
-    .select("id, owner_id, title, details, due_date, completed_at, created_at, updated_at")
+    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, due_date, completed_at, created_at, updated_at")
     .order("completed_at", { ascending: true, nullsFirst: true })
+    .order("project_name", { ascending: true })
+    .order("section_name", { ascending: true })
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
 
@@ -115,7 +121,15 @@ export async function listTodos(): Promise<TodoRecord[]> {
   return data satisfies TodoRecord[];
 }
 
-export async function createTodo(input: { title: string; details?: string | null; dueDate?: string | null }): Promise<TodoRecord> {
+export async function createTodo(input: {
+  title: string;
+  details?: string | null;
+  dueDate?: string | null;
+  projectName?: string;
+  sectionName?: string;
+  goalName?: string | null;
+  isMilestone?: boolean;
+}): Promise<TodoRecord> {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
@@ -125,9 +139,13 @@ export async function createTodo(input: { title: string; details?: string | null
     .insert({
       title: input.title,
       details: input.details ?? null,
+      project_name: input.projectName ?? "Personal",
+      section_name: input.sectionName ?? "Inbox",
+      goal_name: input.goalName ?? null,
+      is_milestone: input.isMilestone ?? false,
       due_date: input.dueDate ?? null,
     })
-    .select("id, owner_id, title, details, due_date, completed_at, created_at, updated_at")
+    .select("id, owner_id, title, details, project_name, section_name, goal_name, is_milestone, due_date, completed_at, created_at, updated_at")
     .single();
 
   if (error) {
@@ -135,6 +153,64 @@ export async function createTodo(input: { title: string; details?: string | null
   }
 
   return data satisfies TodoRecord;
+}
+
+export async function updateTodo(
+  id: string,
+  input: {
+    title?: string;
+    details?: string | null;
+    projectName?: string;
+    sectionName?: string;
+    goalName?: string | null;
+    isMilestone?: boolean;
+    dueDate?: string | null;
+    completedAt?: string | null;
+  },
+): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const updatePayload: Record<string, string | boolean | null> = {};
+
+  if (input.title !== undefined) {
+    updatePayload.title = input.title;
+  }
+
+  if (input.details !== undefined) {
+    updatePayload.details = input.details;
+  }
+
+  if (input.projectName !== undefined) {
+    updatePayload.project_name = input.projectName;
+  }
+
+  if (input.sectionName !== undefined) {
+    updatePayload.section_name = input.sectionName;
+  }
+
+  if (input.goalName !== undefined) {
+    updatePayload.goal_name = input.goalName;
+  }
+
+  if (input.isMilestone !== undefined) {
+    updatePayload.is_milestone = input.isMilestone;
+  }
+
+  if (input.dueDate !== undefined) {
+    updatePayload.due_date = input.dueDate;
+  }
+
+  if (input.completedAt !== undefined) {
+    updatePayload.completed_at = input.completedAt;
+  }
+
+  const { error } = await supabase.from("todos").update(updatePayload).eq("id", id);
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function updateTodoStatus(id: string, completed: boolean): Promise<void> {
@@ -152,6 +228,10 @@ export async function updateTodoStatus(id: string, completed: boolean): Promise<
   if (error) {
     throw error;
   }
+}
+
+export async function moveTodoToSection(id: string, sectionName: string): Promise<void> {
+  return updateTodo(id, { sectionName });
 }
 
 export async function deleteTodo(id: string): Promise<void> {
