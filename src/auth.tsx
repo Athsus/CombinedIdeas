@@ -1,12 +1,12 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { getCurrentSession, signInWithGoogle, signOut, supabase } from "./supabase";
+import { getAuthReturnHashStorageKey, getCurrentSession, signInWithGoogle, signOut, supabase } from "./supabase";
 
 type AuthContextValue = {
   isReady: boolean;
   isConfigured: boolean;
   session: Session | null;
-  signIn: (scopes?: string) => Promise<void>;
+  signIn: (scopes?: string, returnHash?: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -45,6 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (nextSession) {
+        window.localStorage.removeItem(getAuthReturnHashStorageKey());
+      }
       setSession(nextSession);
       setIsReady(true);
     });

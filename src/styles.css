@@ -60,8 +60,11 @@ a {
 }
 
 .todo-app-shell {
-  width: min(1480px, calc(100% - 32px));
-  padding-top: 22px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
 }
 
 .panel {

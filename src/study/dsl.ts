@@ -2,11 +2,30 @@ export type StudySkill = "auto" | "flash_cards" | "quick_quiz" | "study_plan";
 
 export type GeneratedStudySkill = Exclude<StudySkill, "auto"> | "mixed";
 
+export type FlashCardDifficulty = "easy" | "medium" | "hard";
+
+export type FlashCardMode = "concept" | "compare" | "process" | "application";
+
 export type StudyFlashCard = {
   id: string;
-  front: string;
-  back: string;
-  hint?: string;
+  label: string;
+  prompt: string;
+  answer: string;
+  example: string;
+  checkpoint: string;
+  difficulty: FlashCardDifficulty;
+  mode: FlashCardMode;
+  sourceRefs: string[];
+};
+
+export type FlashControlAction = "prev_card" | "next_card" | "flip_card" | "mark_known" | "mark_again";
+
+export type FlashControlStyle = "primary" | "secondary" | "ghost";
+
+export type FlashDeckControl = {
+  action: FlashControlAction;
+  label: string;
+  style: FlashControlStyle;
 };
 
 export type QuizQuestion = {
@@ -29,6 +48,7 @@ export type FlashCardsModule = {
   title: string;
   description: string;
   cards: StudyFlashCard[];
+  controls?: FlashDeckControl[];
 };
 
 export type QuizModule = {
@@ -51,53 +71,12 @@ export type StudyCanvasDsl = {
   version: "1.0";
   tool: "study_canvas";
   skill: GeneratedStudySkill;
+  language: "en";
   title: string;
   summary: string;
   modules: StudyModule[];
   actions: string[];
 };
-
-function looksChinese(text: string): boolean {
-  return /[\u3400-\u9FFF]/.test(text);
-}
-
-export function buildFallbackDsl(knowledgeSummary: string, seedText = ""): StudyCanvasDsl {
-  const zh = looksChinese(`${knowledgeSummary}\n${seedText}`);
-
-  return {
-    version: "1.0",
-    tool: "study_canvas",
-    skill: "flash_cards",
-    title: zh ? "学习画布（本地回退）" : "Learning Canvas (Local Fallback)",
-    summary: knowledgeSummary,
-    modules: [
-      {
-        type: "flashcards",
-        title: zh ? "核心概念" : "Core Concepts",
-        description: zh
-          ? "Claude 暂时不可用。下面是基于你上传内容结构化的起步卡片。"
-          : "Claude is temporarily unavailable. Here is a starter deck based on your uploaded content.",
-        cards: [
-          {
-            id: "fallback-1",
-            front: zh ? "请总结这份资料最核心的三个主题。" : "Summarize the three most important themes in this source.",
-            back: zh
-              ? "从定义、关键原理、典型应用三个角度各写一句。"
-              : "Write one sentence each for definition, key principle, and practical use.",
-          },
-          {
-            id: "fallback-2",
-            front: zh ? "这份资料里最容易混淆的点是什么？" : "What is the most confusing point in this source?",
-            back: zh
-              ? "把它改写成一个“错误说法 vs 正确说法”的对照。"
-              : "Rewrite it as a contrast: common misconception vs correct statement.",
-          },
-        ],
-      },
-    ],
-    actions: zh ? ["继续生成", "细化目标", "切换学习方法"] : ["Regenerate", "Refine goal", "Switch method"],
-  };
-}
 
 function extractFirstJsonObject(text: string): string | null {
   const firstBrace = text.indexOf("{");
@@ -110,13 +89,50 @@ function extractFirstJsonObject(text: string): string | null {
   return text.slice(firstBrace, lastBrace + 1);
 }
 
+function isFlashCardDifficulty(value: unknown): value is FlashCardDifficulty {
+  return value === "easy" || value === "medium" || value === "hard";
+}
+
+function isFlashCardMode(value: unknown): value is FlashCardMode {
+  return value === "concept" || value === "compare" || value === "process" || value === "application";
+}
+
 function isFlashCard(value: unknown): value is StudyFlashCard {
   if (!value || typeof value !== "object") {
     return false;
   }
 
   const card = value as Partial<StudyFlashCard>;
-  return typeof card.id === "string" && typeof card.front === "string" && typeof card.back === "string";
+  return (
+    typeof card.id === "string" &&
+    typeof card.label === "string" &&
+    typeof card.prompt === "string" &&
+    typeof card.answer === "string" &&
+    typeof card.example === "string" &&
+    typeof card.checkpoint === "string" &&
+    isFlashCardDifficulty(card.difficulty) &&
+    isFlashCardMode(card.mode) &&
+    Array.isArray(card.sourceRefs) &&
+    card.sourceRefs.length > 0 &&
+    card.sourceRefs.every((item) => typeof item === "string")
+  );
+}
+
+function isFlashControlAction(value: unknown): value is FlashControlAction {
+  return value === "prev_card" || value === "next_card" || value === "flip_card" || value === "mark_known" || value === "mark_again";
+}
+
+function isFlashControlStyle(value: unknown): value is FlashControlStyle {
+  return value === "primary" || value === "secondary" || value === "ghost";
+}
+
+function isFlashDeckControl(value: unknown): value is FlashDeckControl {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const control = value as Partial<FlashDeckControl>;
+  return isFlashControlAction(control.action) && typeof control.label === "string" && isFlashControlStyle(control.style);
 }
 
 function isQuizQuestion(value: unknown): value is QuizQuestion {
@@ -170,7 +186,12 @@ function isModule(value: unknown): value is StudyModule {
   }
 
   if (module.type === "flashcards") {
-    return Array.isArray(module.cards) && module.cards.length > 0 && module.cards.every((card) => isFlashCard(card));
+    return (
+      Array.isArray(module.cards) &&
+      module.cards.length > 0 &&
+      module.cards.every((card) => isFlashCard(card)) &&
+      (module.controls === undefined || (Array.isArray(module.controls) && module.controls.every((control) => isFlashDeckControl(control))))
+    );
   }
 
   if (module.type === "quiz") {
@@ -191,7 +212,7 @@ function isStudyDsl(value: unknown): value is StudyCanvasDsl {
 
   const dsl = value as Partial<StudyCanvasDsl>;
 
-  if (dsl.version !== "1.0" || dsl.tool !== "study_canvas" || !isGeneratedSkill(dsl.skill)) {
+  if (dsl.version !== "1.0" || dsl.tool !== "study_canvas" || !isGeneratedSkill(dsl.skill) || dsl.language !== "en") {
     return false;
   }
 

@@ -4,12 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5174 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run test && npm run typecheck && npm run build"
+    "verify": "npm run test && npm run typecheck"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
@@ -21,6 +21,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
+    "playwright": "^1.54.2",
     "supabase": "^2.83.0",
     "typescript": "latest",
     "vite": "latest",

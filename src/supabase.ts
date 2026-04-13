@@ -1,5 +1,15 @@
 import { createClient, type Session } from "@supabase/supabase-js";
 
+const AUTH_RETURN_HASH_STORAGE_KEY_PREFIX = "ideas-combine.auth-return-hash";
+
+export function getAuthReturnHashStorageKey(): string {
+  if (typeof window === "undefined") {
+    return AUTH_RETURN_HASH_STORAGE_KEY_PREFIX;
+  }
+
+  return `${AUTH_RETURN_HASH_STORAGE_KEY_PREFIX}:${window.location.origin}${window.location.pathname}`;
+}
+
 export type GomokuSessionRecord = {
   outcome: "black_win" | "white_win" | "draw" | "abandoned";
   winner: "black" | "white" | null;
@@ -26,6 +36,16 @@ export type TodoRecord = {
   updated_at: string;
 };
 
+export type TodoProjectRecord = {
+  id: string;
+  owner_id: string;
+  name: string;
+  daily_summary_enabled: boolean;
+  summary_threshold_days: number;
+  created_at: string;
+  updated_at: string;
+};
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -41,6 +61,31 @@ export const supabase =
       })
     : null;
 
+function getSupabaseErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+  }
+
+  return String(error);
+}
+
+function isMissingRelation(error: unknown, relationName: string): boolean {
+  const message = getSupabaseErrorMessage(error).toLowerCase();
+  return message.includes(relationName.toLowerCase()) && (message.includes("does not exist") || message.includes("not found"));
+}
+
+function isUnavailableFunction(error: unknown): boolean {
+  const message = getSupabaseErrorMessage(error).toLowerCase();
+  return message.includes("404") || (message.includes("function") && message.includes("not found"));
+}
+
 export async function getCurrentSession(): Promise<Session | null> {
   if (!supabase) {
     return null;
@@ -55,12 +100,17 @@ export async function getCurrentSession(): Promise<Session | null> {
   return data.session;
 }
 
-export async function signInWithGoogle(scopes = "https://www.googleapis.com/auth/calendar.events"): Promise<void> {
+export async function signInWithGoogle(
+  scopes = "https://www.googleapis.com/auth/calendar.events",
+  returnHash = "#/todo/workspace",
+): Promise<void> {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
 
-  const redirectTo = `${window.location.origin}${window.location.pathname}${window.location.search}#/todo`;
+  window.localStorage.setItem(getAuthReturnHashStorageKey(), returnHash);
+
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -117,10 +167,98 @@ export async function listTodos(): Promise<TodoRecord[]> {
     .order("created_at", { ascending: false });
 
   if (error) {
+    if (isMissingRelation(error, "todos")) {
+      return [];
+    }
     throw error;
   }
 
   return data satisfies TodoRecord[];
+}
+
+export async function listTodoProjects(): Promise<TodoProjectRecord[]> {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("todo_projects")
+    .select("id, owner_id, name, daily_summary_enabled, summary_threshold_days, created_at, updated_at")
+    .order("name", { ascending: true });
+
+  if (error) {
+    if (isMissingRelation(error, "todo_projects")) {
+      return [];
+    }
+    throw error;
+  }
+
+  return data satisfies TodoProjectRecord[];
+}
+
+export async function createTodoProject(input: {
+  name: string;
+  dailySummaryEnabled?: boolean;
+  summaryThresholdDays?: number;
+}): Promise<TodoProjectRecord> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { data, error } = await supabase
+    .from("todo_projects")
+    .insert({
+      name: input.name,
+      daily_summary_enabled: input.dailySummaryEnabled ?? false,
+      summary_threshold_days: input.summaryThresholdDays ?? 3,
+    })
+    .select("id, owner_id, name, daily_summary_enabled, summary_threshold_days, created_at, updated_at")
+    .single();
+
+  if (error) {
+    if (isMissingRelation(error, "todo_projects")) {
+      throw new Error("Project support is not available until the `todo_projects` table exists.");
+    }
+    throw error;
+  }
+
+  return data satisfies TodoProjectRecord;
+}
+
+export async function updateTodoProject(
+  id: string,
+  input: {
+    name?: string;
+    dailySummaryEnabled?: boolean;
+    summaryThresholdDays?: number;
+  },
+): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const updatePayload: Record<string, string | boolean | number> = {};
+
+  if (input.name !== undefined) {
+    updatePayload.name = input.name;
+  }
+
+  if (input.dailySummaryEnabled !== undefined) {
+    updatePayload.daily_summary_enabled = input.dailySummaryEnabled;
+  }
+
+  if (input.summaryThresholdDays !== undefined) {
+    updatePayload.summary_threshold_days = input.summaryThresholdDays;
+  }
+
+  const { error } = await supabase.from("todo_projects").update(updatePayload).eq("id", id);
+
+  if (error) {
+    if (isMissingRelation(error, "todo_projects")) {
+      throw new Error("Project settings are not available until the `todo_projects` table exists.");
+    }
+    throw error;
+  }
 }
 
 export async function createTodo(input: {
@@ -265,6 +403,9 @@ export async function invokeTodoAgent(input: {
   });
 
   if (error) {
+    if (isUnavailableFunction(error)) {
+      throw new Error("The todo agent backend is not reachable right now.");
+    }
     throw error;
   }
 
@@ -294,6 +435,9 @@ export async function syncTodosToGoogleCalendar(providerToken: string): Promise<
   });
 
   if (error) {
+    if (isUnavailableFunction(error)) {
+      throw new Error("Calendar sync backend is not reachable right now.");
+    }
     throw error;
   }
 

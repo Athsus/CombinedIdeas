@@ -4,6 +4,8 @@ import FlashCardsStudioPage from "./pages/FlashCardsStudioPage";
 import GomokuPage from "./pages/GomokuPage";
 import ProductIndexPage from "./pages/ProductIndexPage";
 import StudyToolsHomePage from "./pages/StudyToolsHomePage";
+import TodoLandingPage from "./pages/TodoLandingPage";
+import TodoLoginPage from "./pages/TodoLoginPage";
 import TodoToolPage from "./pages/TodoToolPage";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -11,7 +13,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/gomoku": "Gomoku | Ideas Combine",
   "/study-tools": "Study Tools | Ideas Combine",
   "/study-tools/flash-cards": "Flash Cards Studio | Ideas Combine",
-  "/todo": "TODO Tool | Ideas Combine",
+  "/todo": "TODO | Ideas Combine",
+  "/todo/login": "TODO Login | Ideas Combine",
+  "/todo/workspace": "TODO Workspace | Ideas Combine",
 };
 
 function RouteTitleSync() {
@@ -26,7 +30,7 @@ function RouteTitleSync() {
 
 export default function App() {
   const location = useLocation();
-  const shellClassName = location.pathname === "/todo" ? "app-shell todo-app-shell" : "app-shell";
+  const shellClassName = location.pathname.startsWith("/todo") ? "app-shell todo-app-shell" : "app-shell";
 
   return (
     <div className={shellClassName}>
@@ -36,7 +40,9 @@ export default function App() {
         <Route path="/gomoku" element={<GomokuPage />} />
         <Route path="/study-tools" element={<StudyToolsHomePage />} />
         <Route path="/study-tools/flash-cards" element={<FlashCardsStudioPage />} />
-        <Route path="/todo" element={<TodoToolPage />} />
+        <Route path="/todo" element={<TodoLandingPage />} />
+        <Route path="/todo/login" element={<TodoLoginPage />} />
+        <Route path="/todo/workspace" element={<TodoToolPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

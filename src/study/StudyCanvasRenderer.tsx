@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { QuizQuestion, StudyCanvasDsl, StudyFlashCard, StudyPlanSession } from "./dsl";
+import type { FlashControlAction, FlashCardsModule, QuizQuestion, StudyCanvasDsl, StudyFlashCard, StudyPlanSession } from "./dsl";
 
 type Props = {
   dsl: StudyCanvasDsl;
@@ -7,7 +7,14 @@ type Props = {
 
 type CardProgress = Record<string, "known" | "again" | null>;
 
-function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
+const CARD_MODE_LABELS: Record<StudyFlashCard["mode"], string> = {
+  concept: "Concept",
+  compare: "Compare",
+  process: "Process",
+  application: "Application",
+};
+
+function FlashCardDeck({ cards, controls }: { cards: StudyFlashCard[]; controls: FlashCardsModule["controls"] }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [progress, setProgress] = useState<CardProgress>({});
@@ -33,6 +40,30 @@ function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
     nextCard();
   }
 
+  function triggerControl(action: FlashControlAction) {
+    if (action === "prev_card") {
+      prevCard();
+      return;
+    }
+
+    if (action === "next_card") {
+      nextCard();
+      return;
+    }
+
+    if (action === "flip_card") {
+      setIsFlipped((current) => !current);
+      return;
+    }
+
+    if (action === "mark_known") {
+      markCard("known");
+      return;
+    }
+
+    markCard("again");
+  }
+
   return (
     <div className="study-deck">
       <div className="study-deck-top">
@@ -42,24 +73,51 @@ function FlashCardDeck({ cards }: { cards: StudyFlashCard[] }) {
         <p>{doneCount} known</p>
       </div>
       <button className={`flash-card ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((current) => !current)}>
-        <span className="flash-side front">{activeCard.front}</span>
-        <span className="flash-side back">{activeCard.back}</span>
+        <div className="flash-side front">
+          <div className="flash-card-meta">
+            <span className="flash-chip">{CARD_MODE_LABELS[activeCard.mode]}</span>
+            <span className={`flash-chip difficulty-${activeCard.difficulty}`}>{activeCard.difficulty}</span>
+          </div>
+          <h4>{activeCard.label}</h4>
+          <p>{activeCard.prompt}</p>
+        </div>
+        <div className="flash-side back">
+          <h4>{activeCard.label}</h4>
+          <div className="flash-section">
+            <span>Answer</span>
+            <p>{activeCard.answer}</p>
+          </div>
+          <div className="flash-section">
+            <span>Example</span>
+            <p>{activeCard.example}</p>
+          </div>
+          <div className="flash-section">
+            <span>Checkpoint</span>
+            <p>{activeCard.checkpoint}</p>
+          </div>
+          <div className="flash-sources">
+            {activeCard.sourceRefs.map((source) => (
+              <span key={`${activeCard.id}-${source}`} className="source-chip">
+                {source}
+              </span>
+            ))}
+          </div>
+        </div>
       </button>
-      {activeCard.hint ? <p className="flash-hint">Hint: {activeCard.hint}</p> : null}
-      <div className="study-deck-controls">
-        <button type="button" className="button secondary" onClick={prevCard}>
-          Previous
-        </button>
-        <button type="button" className="button secondary" onClick={nextCard}>
-          Skip
-        </button>
-        <button type="button" className="button" onClick={() => markCard("again")}>
-          Review Again
-        </button>
-        <button type="button" className="button" onClick={() => markCard("known")}>
-          I Know This
-        </button>
-      </div>
+      {(controls ?? []).length > 0 ? (
+        <div className="study-deck-controls">
+          {(controls ?? []).map((control, index) => (
+            <button
+              key={`${control.action}-${index}`}
+              type="button"
+              className={["button", control.style === "primary" ? "" : control.style].filter(Boolean).join(" ")}
+              onClick={() => triggerControl(control.action)}
+            >
+              {control.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -142,6 +200,7 @@ export function StudyCanvasRenderer({ dsl }: Props) {
         <p className="eyebrow">Interactive Canvas</p>
         <h2>{dsl.title}</h2>
         <p>{dsl.summary}</p>
+        <p className="small-note">Rendering Rule v1: fixed layout blocks, AI-generated card content only.</p>
       </div>
       {dsl.modules.map((module, index) => (
         <section key={`${module.type}-${index}`} className="study-module">
@@ -149,7 +208,7 @@ export function StudyCanvasRenderer({ dsl }: Props) {
             <h3>{module.title}</h3>
             <p>{module.description}</p>
           </header>
-          {module.type === "flashcards" ? <FlashCardDeck cards={module.cards} /> : null}
+          {module.type === "flashcards" ? <FlashCardDeck cards={module.cards} controls={module.controls ?? []} /> : null}
           {module.type === "quiz" ? <QuizPanel questions={module.questions} /> : null}
           {module.type === "study_plan" ? <StudyPlanPanel sessions={module.sessions} /> : null}
         </section>

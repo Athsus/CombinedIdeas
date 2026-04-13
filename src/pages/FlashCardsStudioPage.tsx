@@ -1,20 +1,41 @@
 import { type ChangeEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { generateStudyCanvas } from "../study/claude";
-import { buildFallbackDsl, type StudyCanvasDsl, type StudySkill } from "../study/dsl";
+import { generateStudyCanvas, type GenerationStatus } from "../study/claude";
+import { type StudyCanvasDsl, type StudySkill } from "../study/dsl";
 import { getAcceptedFileTypes, parseKnowledgeFile, type ParsedKnowledgeFile } from "../study/fileParsers";
 import { StudyCanvasRenderer } from "../study/StudyCanvasRenderer";
+
+type CanvasVersion = {
+  id: string;
+  label: string;
+  createdAt: string;
+  dsl: StudyCanvasDsl;
+};
+
+function formatShortTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export default function FlashCardsStudioPage() {
   const [files, setFiles] = useState<ParsedKnowledgeFile[]>([]);
   const [skill, setSkill] = useState<StudySkill>("auto");
-  const [learningGoal, setLearningGoal] = useState("Understand and remember the core ideas quickly.");
+  const [learningGoal, setLearningGoal] = useState("Understand and retain the core ideas with confident recall.");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dsl, setDsl] = useState<StudyCanvasDsl | null>(null);
+  const [generationLog, setGenerationLog] = useState<GenerationStatus[]>([]);
+  const [versions, setVersions] = useState<CanvasVersion[]>([]);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
 
   const totalChars = useMemo(() => files.reduce((sum, file) => sum + file.chars, 0), [files]);
+
+  const activeVersion = useMemo(() => {
+    if (activeVersionId) {
+      return versions.find((version) => version.id === activeVersionId) ?? null;
+    }
+
+    return versions[0] ?? null;
+  }, [versions, activeVersionId]);
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []);
@@ -56,24 +77,69 @@ export default function FlashCardsStudioPage() {
 
     setIsLoading(true);
     setError(null);
+    setGenerationLog([]);
 
     try {
-      const generated = await generateStudyCanvas({
-        files,
-        skill,
-        learningGoal,
-        difficulty,
-      });
+      const generated = await generateStudyCanvas(
+        {
+          files,
+          skill,
+          learningGoal,
+          difficulty,
+        },
+        {
+          onStatus: (status) => {
+            setGenerationLog((previous) => [...previous, status]);
+          },
+        },
+      );
 
-      setDsl(generated);
+      const createdAt = new Date().toISOString();
+      const version: CanvasVersion = {
+        id: `v-${Date.now()}`,
+        label: `Version ${versions.length + 1}`,
+        createdAt,
+        dsl: generated.dsl,
+      };
+
+      setVersions((previous) => [version, ...previous]);
+      setActiveVersionId(version.id);
     } catch (generationError) {
       const message = generationError instanceof Error ? generationError.message : "Generation failed.";
-      setError(`${message} Falling back to a local starter deck.`);
-      const seedText = files.map((file) => file.text.slice(0, 1200)).join("\n");
-      setDsl(buildFallbackDsl("Local fallback canvas. Confirm Edge Function logs and Claude settings, then regenerate.", seedText));
+      setError(`${message} No fallback deck is rendered in production mode.`);
+      setGenerationLog((previous) => [
+        ...previous,
+        {
+          phase: "done",
+          message: "Generation failed. No local fallback rendered.",
+          at: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function handleCopyDsl() {
+    if (!activeVersion) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(JSON.stringify(activeVersion.dsl, null, 2));
+  }
+
+  function handleDownloadDsl() {
+    if (!activeVersion) {
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(activeVersion.dsl, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${activeVersion.label.toLowerCase().replace(/\s+/g, "-")}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -81,18 +147,18 @@ export default function FlashCardsStudioPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">Study Tools / Studio</p>
-          <h1>Build an Interactive Learning Canvas</h1>
+          <h1>Interactive Canvas Workspace</h1>
         </div>
         <Link className="text-link" to="/study-tools">
           Return to tools
         </Link>
       </header>
 
-      <div className="studio-layout">
+      <div className="studio-layout claude-layout">
         <div className="studio-left">
           <aside className="studio-panel upload-panel">
-            <h2>1. Knowledge Sources</h2>
-            <p>Upload your own files. Supported formats: txt, md, docx.</p>
+            <h2>Knowledge Sources</h2>
+            <p>Accepted formats: txt, md, docx.</p>
             <label className="upload-dropzone" htmlFor="knowledge-files">
               <strong>Upload source files</strong>
               <span>Drop files or click to browse.</span>
@@ -125,7 +191,7 @@ export default function FlashCardsStudioPage() {
           </aside>
 
           <section className="studio-panel prompt-panel">
-            <h2>2. Generation Setup</h2>
+            <h2>Generation Setup</h2>
             <label>
               Learning method
               <select value={skill} onChange={(event) => setSkill(event.target.value as StudySkill)}>
@@ -148,23 +214,65 @@ export default function FlashCardsStudioPage() {
               </select>
             </label>
             <button type="button" className="button" onClick={handleGenerate} disabled={isLoading}>
-              {isLoading ? "Generating..." : "Generate Interactive Canvas"}
+              {isLoading ? "Generating..." : "Generate Artifact"}
             </button>
-            <p className="small-note">Generation uses Edge Function `claude-study` and renders validated JSON DSL, not chat bubbles.</p>
+            <p className="small-note">Production mode: only validated JSON DSL is rendered.</p>
+            {generationLog.length > 0 ? (
+              <div className="generation-status" aria-live="polite">
+                {generationLog.map((step, index) => (
+                  <p key={`${step.at}-${index}`} className={`generation-step ${isLoading && index === generationLog.length - 1 ? "active" : ""}`}>
+                    <span>{step.phase}</span>
+                    <strong>{step.message}</strong>
+                  </p>
+                ))}
+              </div>
+            ) : null}
             {error ? <p className="error-text">{error}</p> : null}
           </section>
         </div>
 
-        <section className="studio-panel canvas-panel">
-          <h2>3. Interactive Canvas</h2>
-          {dsl ? (
-            <StudyCanvasRenderer dsl={dsl} />
-          ) : (
-            <div className="canvas-empty">
-              <p>No canvas yet.</p>
-              <p>Upload sources on the left, then generate to render the interactive workspace on the right.</p>
+        <section className="studio-panel canvas-panel artifact-panel">
+          <div className="artifact-head">
+            <div>
+              <p className="eyebrow">Artifact</p>
+              <h2>{activeVersion?.dsl.title ?? "No artifact yet"}</h2>
             </div>
-          )}
+            <div className="artifact-actions">
+              <label className="version-picker" htmlFor="version-select">
+                <span>Version</span>
+                <select
+                  id="version-select"
+                  value={activeVersion?.id ?? ""}
+                  onChange={(event) => setActiveVersionId(event.target.value)}
+                  disabled={versions.length === 0}
+                >
+                  {versions.length === 0 ? <option value="">None</option> : null}
+                  {versions.map((version) => (
+                    <option key={version.id} value={version.id}>
+                      {version.label} · {formatShortTime(version.createdAt)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="button secondary" disabled={!activeVersion} onClick={() => void handleCopyDsl()}>
+                Copy JSON
+              </button>
+              <button type="button" className="button secondary" disabled={!activeVersion} onClick={handleDownloadDsl}>
+                Download
+              </button>
+            </div>
+          </div>
+
+          <div className="artifact-body">
+            {activeVersion ? (
+              <StudyCanvasRenderer dsl={activeVersion.dsl} />
+            ) : (
+              <div className="canvas-empty">
+                <p>No artifact generated yet.</p>
+                <p>Upload files and generate to open your first interactive canvas version.</p>
+              </div>
+            )}
+          </div>
         </section>
       </div>
     </section>
